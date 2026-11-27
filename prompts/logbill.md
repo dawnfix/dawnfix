@@ -10,8 +10,7 @@ Create a skill named logbill that explains my CloudWatch Logs bill with Dawnfix 
 Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-logbill"
   "$HOME/.cache/dawnfix-logbill/bin/pip" install dawnfix
-(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
-"dawnfix-logbill @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=logbill", REF a release tag.)
+(Without PyPI: pip install "dawnfix @ git+https://github.com/dawnfix/dawnfix@REF", REF a release tag.)
 REF below is the release: v followed by what `logbill --version` prints.
 LB = "$HOME/.cache/dawnfix-logbill/bin/logbill".
 

@@ -8,7 +8,7 @@
 #   service.sh fleet-client --name "Client Co" [--emails a@x.com] [--weekly on] [--auto-send off]
 #                                                        POST /v1/clients, then PATCH /v1/fleet/client
 #
-# The key is read from $DAWNFIX_ENTERPRISE_KEY (or the older $DAWNFIX_LICENSE), or asked for without echo when stdin is a
+# The key is read from $DAWNFIX_ENTERPRISE_KEY, or asked for without echo when stdin is a
 # terminal. Run it in your own terminal, not through a coding agent, so the key never
 # passes through one. Output is the service's JSON answer, which holds no key: a new
 # client's key goes straight into that repo's DAWNFIX_ENTERPRISE_KEY secret through
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-key="${DAWNFIX_ENTERPRISE_KEY:-${DAWNFIX_LICENSE:-}}"
+key="${DAWNFIX_ENTERPRISE_KEY:-}"
 if [ -z "$key" ] && [ -t 0 ]; then
   printf 'Dawnfix Enterprise key (not shown): ' >&2
   stty -echo 2>/dev/null || true

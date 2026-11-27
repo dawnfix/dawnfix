@@ -26,7 +26,7 @@ Exit 0 when nothing failed, 1 otherwise.
 
 const NEEDED_PERMISSIONS = { contents: 'write', 'pull-requests': 'write', issues: 'write', 'id-token': 'write' };
 const USES = /^dawnfix\/dawnfix\/\.github\/workflows\/dawnfix\.yml(?:@(.*))?$/;
-const ENTERPRISE = ['DAWNFIX_ENTERPRISE_KEY', 'DAWNFIX_LICENSE'];
+const ENTERPRISE = ['DAWNFIX_ENTERPRISE_KEY'];
 
 function readYaml(path) {
   return parseYaml(readFileSync(path, 'utf8'));

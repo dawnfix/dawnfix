@@ -12,7 +12,7 @@ Built 27 Oct 2026; merged into the Worker and shipped as **Dawnfix Fleet** on
 Source available under FSL-1.1-ALv2 (see [LICENSE](../LICENSE) at the repo root). Without a
 key, `fleet-collect.yml` writes `summary.json` per client, prints it in the job log and stops.
 **The hosted board, the client reports and the weekly emails are Dawnfix Enterprise**: with
-the optional `FLEET_AGENCY_KEY` secret the workflow also sends each summary to the board.
+the optional `DAWNFIX_ENTERPRISE_KEY` secret the workflow also sends each summary to the board.
 Enterprise is a monthly subscription, priced per organization (https://dawnfix.dev/pricing).
 
 The product name, company and domain live in the Worker's one constants

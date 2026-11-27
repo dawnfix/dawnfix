@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix-receipt"
-version = "0.3.0"
+version = "0.3.1"
 description = "Cost Explorer before/after receipt for a deploy, posted as one self-updating PR or commit comment."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -40,7 +40,7 @@ function findingsFor(pool: Map<string, Use[]>, account: string): Finding[] {
         severity: 'high',
         account,
         resource: `namespace ${id}`,
-        title: `Ratelimit namespace ${id} shared by ${workers.length} Workers`,
+        title: `Rate-limit namespace ${id} shared by ${workers.length} Workers`,
         detail: `${where}. They share counters, so traffic to one spends the others' limit.`,
         fix: `Give each Worker its own ids${free ? ` (next free block: ${free}-${Number(free) + 98})` : ''} and redeploy each.`,
         source,

@@ -1,4 +1,4 @@
-// Sketch, not deployed: the same audit on a Worker cron. Only src/core is imported, and
+// An example to adapt: the same audit on a Worker cron in your own account. Only src/core is imported, and
 // `npm run typecheck` compiles this file with no Node types to keep it that way.
 // The secret-name baseline moves from ~/.flare/state.json to one KV key; local repo
 // scanning has no place here (a CI job could upload wrangler files instead).

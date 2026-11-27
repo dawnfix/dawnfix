@@ -1,5 +1,5 @@
 // Every product name, org and URL the tool prints lives here and nowhere else, so a rename
-// is one file. Renamed from Dawnpatch Flare on 27 Nov 2026.
+// is one file.
 
 const SITE = 'https://dawnfix.dev';
 

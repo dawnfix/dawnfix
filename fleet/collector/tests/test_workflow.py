@@ -48,7 +48,7 @@ def test_every_action_is_pinned_to_a_full_commit_sha_with_its_tag():
 
 
 def test_a_refused_key_is_reported_and_the_run_goes_on():
-    """VERIFY item 3: a missing or refused Enterprise key never fails the collector run."""
+    """A missing or refused Enterprise key never fails the collector run."""
     text = WORKFLOW.read_text()
     assert "401|402|403) say_need_key" in text
     assert "The Fleet board needs an Enterprise key. Contact dawnfix@" in text
@@ -64,7 +64,7 @@ def test_no_licence_gate_and_send_is_optional():
     assert "needs" not in job and "if" not in job
     send = next(s for s in job["steps"] if s.get("name") == "Send to the board")["run"]
     head = re.split(r"^fi$", send, maxsplit=1, flags=re.M)[0]
-    assert 'if [ -z "$FLEET_AGENCY_KEY" ]' in head
+    assert 'if [ -z "$DAWNFIX_ENTERPRISE_KEY" ]' in head
     assert "jq -c . summary.json" in head and "exit 0" in head and "::error" not in head
 
 

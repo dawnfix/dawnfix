@@ -16,7 +16,7 @@ chat, nothing changed without your yes.
 Each prompt installs the Python tools from PyPI (`pip install dawnfix`, one package for
 every CLI) or runs `npx dawnfix`; the workflows are the reusable ones in
 github.com/dawnfix/dawnfix (`.github/workflows/`), called at `@v0` or a pinned release.
-Nothing here needs a licence key. The optional Enterprise key (`DAWNFIX_ENTERPRISE_KEY`)
+Nothing here needs a license key. The optional Enterprise key (`DAWNFIX_ENTERPRISE_KEY`)
 only turns on hosted reporting at https://dawnfix.dev (see https://dawnfix.dev/pricing).
 
 `prompts/ci/` holds the instructions the GitHub Actions workflow gives its own agent. You

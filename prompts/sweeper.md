@@ -10,8 +10,7 @@ Create a skill named sweeper that finds AWS leftovers after a migration with Daw
 Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-sweeper"
   "$HOME/.cache/dawnfix-sweeper/bin/pip" install dawnfix
-(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
-"dawnfix-sweeper @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=sweeper", REF a release tag.)
+(Without PyPI: pip install "dawnfix @ git+https://github.com/dawnfix/dawnfix@REF", REF a release tag.)
 REF below is the release: v followed by what `sweeper --version` prints.
 SW = "$HOME/.cache/dawnfix-sweeper/bin/sweeper" (call it by this path; the name is common).
 

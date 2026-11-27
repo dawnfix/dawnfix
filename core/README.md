@@ -1,6 +1,6 @@
 # dawnfix-core
 
-The deterministic half of Dawnfix (Job A in `docs/spec.md` §5). One `tick`
+The deterministic half of Dawnfix (the read job of the workflow). One `tick`
 reads the last hour of production errors, read-only, folds them into
 fingerprints, drops what it has seen before, redacts everything and writes
 `findings.json`. No LLM runs here; when nothing is new the workflow stops and
@@ -52,7 +52,7 @@ dawnfix tick --config .dawnfix.yml --state state.json --out findings.json \
 
 ## Config
 
-See `examples/dawnfix.yml`. Shape follows spec §4.2; additions:
+See `examples/dawnfix.yml`, and `templates/dawnfix.yml` at the repo root for every key. Notes:
 
 - `log_groups` entries can be a name or `{name, filter_pattern, stream_prefix}`.
   Without `filter_pattern`, a broad error pattern is used (`DEFAULT_FILTER` in

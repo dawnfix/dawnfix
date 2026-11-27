@@ -7,8 +7,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix"
-version = "0.3.0"
-description = "Dawnfix, the AI SRE that runs in your own GitHub Actions: the read-only prod log tick (dawnfix) and the free tools logbill, parity, sweeper, leastpriv, receipt and fleet. Logs stay in your accounts."
+version = "0.3.1"
+description = "Dawnfix, the AI SRE that runs in your own GitHub Actions: the read-only production log check (dawnfix) and the free tools logbill, parity, sweeper, leastpriv, receipt and fleet. Your logs stay in your accounts."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "FSL-1.1-ALv2"
@@ -30,6 +30,8 @@ gcp = ["google-cloud-logging>=3.5"]
 [project.urls]
 Homepage = "https://dawnfix.dev"
 Source = "https://github.com/dawnfix/dawnfix"
+Documentation = "https://dawnfix.dev/docs/setup"
+Issues = "https://github.com/dawnfix/dawnfix/issues"
 
 # The same names as each tool's own pyproject.toml.
 [project.scripts]

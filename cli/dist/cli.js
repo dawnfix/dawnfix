@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dawnfix 0.3.0: npx dawnfix init | doctor | flare.
+// Dawnfix 0.3.1: npx dawnfix init | doctor | flare.
 // Source available under FSL-1.1-ALv2 (see LICENSE in this package).
 // GENERATED from cli/src/ and flare/src/ by `npm run build` (esbuild, one file, no dependencies). Do not edit.
 import { createRequire as __dawnfixRequire } from 'node:module';
@@ -8059,7 +8059,7 @@ function findingsFor(pool, account) {
         severity: "high",
         account,
         resource: `namespace ${id}`,
-        title: `Ratelimit namespace ${id} shared by ${workers.length} Workers`,
+        title: `Rate-limit namespace ${id} shared by ${workers.length} Workers`,
         detail: `${where}. They share counters, so traffic to one spends the others' limit.`,
         fix: `Give each Worker its own ids${free ? ` (next free block: ${free}-${Number(free) + 98})` : ""} and redeploy each.`,
         source
@@ -8551,7 +8551,7 @@ var CHECK_NAMES = {
   "workers-dev-enabled": "workers.dev exposure",
   "preview-urls-enabled": "Preview URLs",
   "hostname-without-auth": "Hostname without auth",
-  "ratelimit-namespace-shared": "Ratelimit namespace clash",
+  "ratelimit-namespace-shared": "Rate-limit namespace clash",
   "route-to-missing-script": "Route to missing Worker",
   "dangling-dns": "Dangling DNS",
   "dead-script": "Dead script",
@@ -9588,7 +9588,7 @@ function validate(schema, value, root = schema, path = "") {
 }
 
 // src/version.mjs
-var VERSION = true ? "0.3.0" : "0.0.0-dev";
+var VERSION = true ? "0.3.1" : "0.0.0-dev";
 var TAG = `v${VERSION}`;
 var MAJOR_REF = `v${VERSION.split(".")[0]}`;
 var REPO_URL = "https://github.com/dawnfix/dawnfix";
@@ -9608,7 +9608,7 @@ Exit 0 when nothing failed, 1 otherwise.
 `;
 var NEEDED_PERMISSIONS = { contents: "write", "pull-requests": "write", issues: "write", "id-token": "write" };
 var USES = /^dawnfix\/dawnfix\/\.github\/workflows\/dawnfix\.yml(?:@(.*))?$/;
-var ENTERPRISE = ["DAWNFIX_ENTERPRISE_KEY", "DAWNFIX_LICENSE"];
+var ENTERPRISE = ["DAWNFIX_ENTERPRISE_KEY"];
 function readYaml(path) {
   return (0, import_yaml.parse)(readFileSync(path, "utf8"));
 }

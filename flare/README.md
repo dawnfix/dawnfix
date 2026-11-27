@@ -170,7 +170,7 @@ emails the workspace the same day. The hosted service never sees a Cloudflare to
 - `schema/flare-ingest.schema.json`: the counts document the CI workflow sends with an Enterprise key.
 - `examples/demo-snapshot.json`, `examples/demo-ingest.json`: the demo account and what it sends.
 - `examples/worker-cron.ts`: the same audit on a Worker cron in your own account, with KV for
-  the baseline (sketch, not deployed; Dawnfix's own service never holds a token).
+  the baseline. An example for you to adapt; Dawnfix's own service never holds a token.
 - `test/`: vitest. `test/fixtures/cloudflare.ts` is a fake Cloudflare API with one
   planted problem per check and a clean neighbour for each; `test/fixtures/repos/` are
   wrangler files, `test/fixtures/repos-extra/` the cron-only / framework cases.

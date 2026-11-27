@@ -32,29 +32,7 @@ aws iam list-open-id-connect-providers \
 Deleting a stack that created the provider deletes the provider, which breaks every other
 role in the account that trusts it. Stacks for further repos should use `false`.
 
-## Launch Stack link (console alternative to the CLI below)
-
-The console only loads templates from S3. The template is published at a versioned key in
-a public-read bucket (placeholder `DAWNFIX_TEMPLATE_BUCKET`; not created yet):
-
-```
-https://console.aws.amazon.com/cloudformation/home?region=<REGION>#/stacks/create/review
-  ?templateURL=https://DAWNFIX_TEMPLATE_BUCKET.s3.amazonaws.com/dawnfix-read-role/v1/dawnfix-read-role.yaml
-  &stackName=dawnfix-read-<repo>
-  &param_GitHubOrg=<org>
-  &param_GitHubRepo=<repo>
-  &param_Branch=<default branch>
-  &param_CreateOIDCProvider=<true|false>
-  &param_ExistingOIDCProviderArn=<arn or empty>
-  &param_RoleName=dawnfix-read-<repo>
-  &param_LogGroupPrefix=<prefix*>
-```
-
-Joined on one line, with each value URL-encoded (`templateURL` too when it contains `?` or
-`&`). The user still reviews and ticks "I acknowledge that AWS CloudFormation might create
-IAM resources with custom names" before anything is created.
-
-## CLI equivalent
+## Deploy with the CLI
 
 ```sh
 aws cloudformation deploy \

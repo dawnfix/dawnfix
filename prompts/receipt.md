@@ -11,8 +11,7 @@ and can add its GitHub Actions workflow to this repo.
 Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-receipt"
   "$HOME/.cache/dawnfix-receipt/bin/pip" install dawnfix
-(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
-"dawnfix-receipt @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=receipt", REF a release tag.)
+(Without PyPI: pip install "dawnfix @ git+https://github.com/dawnfix/dawnfix@REF", REF a release tag.)
 REF below is the release: v followed by what `receipt --version` prints.
 R = "$HOME/.cache/dawnfix-receipt/bin/receipt". Paths below are in that repo at REF.
 

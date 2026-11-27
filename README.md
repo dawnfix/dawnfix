@@ -3,9 +3,9 @@
 An AI SRE (AI Site Reliability Engineer) for AWS and GCP that runs in your own GitHub
 Actions. A deterministic, read-only job reads CloudWatch Logs, alarms, load balancer 5xx or
 Cloud Logging every hour, fingerprints and redacts the errors, and remembers which ones it
-has seen. When one is new, an agent with your own Anthropic key either files a GitHub issue
-with the cause, the impact and a severity, or writes a failing test and the fix and opens a
-draft PR for you to review. It never merges or deploys. Your logs never leave your accounts.
+has seen. When one is new, an agent runs with your own Anthropic key. It either files a
+GitHub issue with the cause, the impact and a severity, or writes a failing test and the fix
+and opens a draft PR for you to review. It never merges or deploys. Your logs never leave your accounts.
 
 Free and source available. No key and no plan is needed for anything in this repo.
 
@@ -47,7 +47,8 @@ It never asks for a secret and never writes one. It prints what you run next:
    (it trusts GitHub OIDC for your repo's default branch only; check it with
    `infra/aws/verify_readonly.py`). GCP: `infra/gcp/setup-wif.sh` (Workload Identity
    Federation, `roles/logging.viewer` only).
-2. **Secrets**, typed by you: `gh secret set ANTHROPIC_API_KEY`.
+2. **Repo settings**, typed by you: the role as the variable `DAWNFIX_AWS_ROLE_ARN` (or
+   `DAWNFIX_GCP_WIF_PROVIDER`), and `gh secret set ANTHROPIC_API_KEY`.
 3. **Review and run.** Open a PR with the two files and merge it. Then
    `gh workflow run dawnfix.yml -f dry_run=true` shows exactly what would leave your account,
    and `gh workflow run dawnfix.yml -f baseline=true` records the errors you already have, so
@@ -85,7 +86,7 @@ would rather keep the whole file in their repo. Copy one, copy the `schedule` of
 ### The CLIs
 
 ```sh
-pipx install dawnfix          # PyPI: dawnfix (the tick), logbill, parity, sweeper, leastpriv, receipt, fleet
+pipx install dawnfix          # PyPI: dawnfix (the read job's CLI), logbill, parity, sweeper, leastpriv, receipt, fleet
 dawnfix validate --config .dawnfix.yml
 npx dawnfix flare --help      # npm: the Cloudflare audit (also node flare/dist/cli.js)
 ```
@@ -98,8 +99,8 @@ bills go to you, not to us:
 - **Anthropic tokens**, on your own `ANTHROPIC_API_KEY`. Only the diagnose or fix job uses
   them, and only on a run that found a new error. A quiet hour spends no tokens.
   `limits.fix_prs_per_day` and the agent's `max_turns` cap a busy day.
-- **GitHub Actions minutes.** The read job runs every hour, about a minute each, so roughly
-  750 minutes a month on the default schedule, plus the agent jobs when they run. Free on
+- **GitHub Actions minutes.** The read job runs every hour, about a minute each, so about
+  720 minutes a month on the default schedule, plus the agent jobs when they run. Free on
   public repos; on private repos they count against your plan's included minutes.
 - **AWS API calls** in your account: the tick reads with `FilterLogEvents` and
   `DescribeAlarms`, and load balancer 5xx with `GetMetricData` ($0.01 per 1,000 metrics).
@@ -151,21 +152,20 @@ Tests: `cd core && make install && make test`; `core/.venv/bin/pytest -q infra/t
 
 ## Enterprise (hosted, optional)
 
-Everything above runs in your own accounts with no key. Dawnfix Enterprise is our hosted
-part: a status page, digest and alert emails, the Fleet board, and support.
+Everything above runs in your own accounts with no key. Our hosted part adds a status page,
+digest and alert emails, the Fleet board, and support.
 Dawnfix Enterprise is sold by contact: [dawnfix@sivakoza.ai](mailto:dawnfix@sivakoza.ai). It is a monthly
 subscription, priced per organization (https://dawnfix.dev/pricing). With an Enterprise key
-in the `DAWNFIX_ENTERPRISE_KEY` secret (passed to the reusable workflow; the templates also
-read the older name `DAWNFIX_LICENSE`), the workflows also send counts (never log text, names or
+in the `DAWNFIX_ENTERPRISE_KEY` secret, the workflows also send counts (never log text, names or
 values) to the hosted service. Field by field: `core/schema/ingest.schema.json` and
 https://dawnfix.dev/security. Without the key, each of those steps prints one line, such as
 "Hosted reporting (status page and digest) needs an Enterprise key.", sends nothing, and the
 run goes on.
 
-## Licence
+## License
 
 Dawnfix is under the [Functional Source License, Version 1.1, ALv2 Future License](LICENSE)
-(FSL-1.1-ALv2). In plain words, and the licence text is what counts:
+(FSL-1.1-ALv2). In plain words, and the license text is what counts:
 
 - You may use, copy, modify and run it, including in your company and for your clients'
   systems.

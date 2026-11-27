@@ -1,4 +1,4 @@
-"""Loads and validates .dawnfix.yml (spec 4.2)."""
+"""Loads and validates .dawnfix.yml (every key: templates/dawnfix.yml)."""
 import re
 from dataclasses import dataclass, field
 from pathlib import Path

@@ -7,12 +7,11 @@ old scripts, over-scoped tokens, weak zone TLS. One HTML report. Nothing is uplo
 ````text
 Create a skill named flare that audits my Cloudflare setup with Dawnfix Flare.
 
-The CLI is one checked-in file run with plain node 20+ (nothing to npm install). With REF a
-release tag or commit SHA of github.com/dawnfix/dawnfix that I give you:
-  git clone --quiet https://github.com/dawnfix/dawnfix "$HOME/.cache/dawnfix-src"  (or fetch)
-  git -C "$HOME/.cache/dawnfix-src" checkout --quiet REF
-F = node "$HOME/.cache/dawnfix-src/flare/dist/cli.js". Every Cloudflare call it makes is a GET;
-it refuses any other method in code.
+The CLI is the npm package dawnfix: one file, no dependencies, run with Node 20+.
+VERSION is the latest release (npm view dawnfix version prints it).
+F = npx --yes dawnfix@VERSION flare. Every Cloudflare call it makes is a GET; it refuses any
+other method in code. Paths like flare/README.md below are in github.com/dawnfix/dawnfix at
+tag vVERSION; read them there.
 
 Hard rules:
 - Never ask for the token in the chat, never read, print or echo it, never put it on a command

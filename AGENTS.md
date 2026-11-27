@@ -9,7 +9,7 @@ available (FSL-1.1-ALv2), with no key: the reusable workflows in `.github/workfl
 their copy-it-yourself forms in `templates/github/workflows/`), the core CLI (`core/`,
 command `dawnfix`), the tools `logbill/ parity/ flare/ sweeper/ leastpriv/ receipt/ fleet/`,
 and the npm CLI in `cli/` (`npx dawnfix init | doctor | flare`). The hosted Enterprise part
-(status page, digest, Fleet board) is optional. Call it "source available": FSL-1.1-ALv2 is not an OSI licence.
+(status page, digest, Fleet board) is optional. Call it "source available": FSL-1.1-ALv2 is not an OSI license.
 
 ## Setting it up for someone
 
@@ -44,5 +44,5 @@ Markdown; none of them changes anything in the cloud.
   `templates/github/workflows/` is the same below its marker line, with repository variables
   for inputs. Change both the same way (a test compares them).
 - Releases: `RELEASING.md`. One version everywhere; the release workflow checks it.
-- Licence: FSL-1.1-ALv2 (`LICENSE`). Keep `FSL-1.1-ALv2` in manifests and workflow headers.
+- License: FSL-1.1-ALv2 (`LICENSE`). Keep `FSL-1.1-ALv2` in manifests and workflow headers.
 - Dawnfix never merges, deploys or pages anyone. Keep it that way.

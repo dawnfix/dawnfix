@@ -696,7 +696,7 @@ function findingsFor(pool, account) {
         severity: "high",
         account,
         resource: `namespace ${id}`,
-        title: `Ratelimit namespace ${id} shared by ${workers.length} Workers`,
+        title: `Rate-limit namespace ${id} shared by ${workers.length} Workers`,
         detail: `${where}. They share counters, so traffic to one spends the others' limit.`,
         fix: `Give each Worker its own ids${free ? ` (next free block: ${free}-${Number(free) + 98})` : ""} and redeploy each.`,
         source
@@ -1188,7 +1188,7 @@ var CHECK_NAMES = {
   "workers-dev-enabled": "workers.dev exposure",
   "preview-urls-enabled": "Preview URLs",
   "hostname-without-auth": "Hostname without auth",
-  "ratelimit-namespace-shared": "Ratelimit namespace clash",
+  "ratelimit-namespace-shared": "Rate-limit namespace clash",
   "route-to-missing-script": "Route to missing Worker",
   "dangling-dns": "Dangling DNS",
   "dead-script": "Dead script",

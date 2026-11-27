@@ -10,8 +10,7 @@ Create a skill named parity that checks config drift and secrets with Dawnfix Pa
 Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-parity"
   "$HOME/.cache/dawnfix-parity/bin/pip" install dawnfix
-(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
-"dawnfix-parity @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=parity", REF a release tag.)
+(Without PyPI: pip install "dawnfix @ git+https://github.com/dawnfix/dawnfix@REF", REF a release tag.)
 REF below is the release: v followed by what `parity --version` prints.
 P = "$HOME/.cache/dawnfix-parity/bin/parity" (call it by this path; other tools ship a `parity`).
 

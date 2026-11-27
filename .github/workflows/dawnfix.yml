@@ -142,7 +142,7 @@ permissions: {}
 # CORE_REF is the fallback: a tag or commit SHA of github.com/dawnfix/dawnfix. When it is set,
 # dawnfix-core is installed from git at that ref and the instructions are loaded from it.
 env:
-  DAWNFIX_VERSION: "0.3.0"
+  DAWNFIX_VERSION: "0.3.1"
   CORE_REF: ${{ inputs.core-ref }}
 
 jobs:
@@ -282,8 +282,8 @@ jobs:
           workload_identity_provider: ${{ inputs.gcp-wif-provider }}
 
       # State = known fingerprints. Caches are immutable, so every run saves under a new key
-      # and restores the newest one by prefix. The "v1" tracks the fingerprint format
-      # (docs/spec.md section 13): bump it and every repo starts fresh.
+      # and restores the newest one by prefix. The "v1" tracks the fingerprint format:
+      # bump it and every repo starts fresh.
       - name: Restore state
         id: restore
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -365,16 +365,16 @@ jobs:
         if: steps.tick.outcome == 'success' && env.DRY_RUN != 'true'
         env:
           INGEST_BASE: ${{ inputs.ingest-url || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+          DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted reporting (status page and digest) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
           say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
-          if [ -z "$DAWNFIX_LICENSE" ]; then
+          if [ -z "$DAWNFIX_ENTERPRISE_KEY" ]; then
             say_need_key
             exit 0
           fi
-          case "$DAWNFIX_LICENSE" in
+          case "$DAWNFIX_ENTERPRISE_KEY" in
             *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
@@ -384,7 +384,7 @@ jobs:
           esac
           resp="$OUT/ingest-response.json"
           # The bearer header is read from stdin (-K -), so the key is never in argv.
-          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_ENTERPRISE_KEY" |
             curl --silent --show-error --proto '=https' \
               --connect-timeout 5 --max-time 15 --retry 2 --retry-max-time 30 \
               -K - -X POST "$base/v1/ingest" \
@@ -676,7 +676,7 @@ jobs:
     if: needs.fix.outputs.captured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # issues: write is for "comment instead of fix" (spec 4.3) and autonomy plan, which
+    # issues: write is for "comment instead of fix" and autonomy plan, which
     # reports as an issue instead of a PR.
     permissions:
       contents: write
@@ -942,8 +942,8 @@ jobs:
           SCAN_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
           SCAN_PAT: ${{ secrets.DAWNFIX_PR_TOKEN }}
           SCAN_GH: ${{ github.token }}
-          SCAN_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+          SCAN_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+          DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
           INGEST_BASE: ${{ inputs.ingest-url || 'https://dawnfix.dev' }}
           BASE: ${{ github.event.repository.default_branch }}
         run: |
@@ -966,11 +966,11 @@ jobs:
 
           # Tell the hosted service a PR is open (POST /v1/prs). Warns, never fails the job.
           post_pr() { # fingerprint pr_url state
-            [ -n "$DAWNFIX_LICENSE" ] || return 0
-            case "$DAWNFIX_LICENSE" in *[!A-Za-z0-9_-]*) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; return 0 ;; esac
+            [ -n "$DAWNFIX_ENTERPRISE_KEY" ] || return 0
+            case "$DAWNFIX_ENTERPRISE_KEY" in *[!A-Za-z0-9_-]*) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; return 0 ;; esac
             local base="${INGEST_BASE%/}" code
             case "$base" in https://*) ;; *) echo "::warning::the ingest URL must be https; PR state not sent"; return 0 ;; esac
-            code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+            code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_ENTERPRISE_KEY" |
               curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
                 -K - -X POST "$base/v1/prs" \
                 -H "Content-Type: application/json" -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
@@ -1038,7 +1038,7 @@ jobs:
             leak=false
             while IFS= read -r f; do
               content=$(g cat-file -p "$branch:$f" 2>/dev/null || true)
-              for v in "$SCAN_ANTHROPIC" "$SCAN_PAT" "$SCAN_GH" "$SCAN_LICENSE"; do
+              for v in "$SCAN_ANTHROPIC" "$SCAN_PAT" "$SCAN_GH" "$SCAN_ENTERPRISE_KEY"; do
                 if [ -n "$v" ] && printf '%s' "$content" | grep -qF -- "$v"; then leak=true; fi
               done
             done < <(g diff --name-only "$base_sha" "$branch")
@@ -1269,7 +1269,7 @@ jobs:
       - name: Send PR state to the hosted service
         env:
           INGEST_BASE: ${{ inputs.ingest-url || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+          DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
           HEAD_REF: ${{ github.head_ref }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           MERGED: ${{ github.event.pull_request.merged }}
@@ -1282,11 +1282,11 @@ jobs:
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
           say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
-          if [ -z "$DAWNFIX_LICENSE" ]; then
+          if [ -z "$DAWNFIX_ENTERPRISE_KEY" ]; then
             say_need_key
             exit 0
           fi
-          case "$DAWNFIX_LICENSE" in
+          case "$DAWNFIX_ENTERPRISE_KEY" in
             *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
@@ -1296,7 +1296,7 @@ jobs:
           esac
           state=closed
           if [ "$MERGED" = "true" ]; then state=merged; fi
-          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_ENTERPRISE_KEY" |
             curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
               -K - -X POST "$base/v1/prs" \
               -H "Content-Type: application/json" -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \

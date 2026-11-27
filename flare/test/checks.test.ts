@@ -108,7 +108,7 @@ describe('ratelimit-namespace-shared', () => {
   });
   it('joins local files with API bindings without double-counting the same binding', async () => {
     const f = byCheck(run(await withLocal()), 'ratelimit-namespace-shared').find((x) => x.resource === 'namespace 1001')!;
-    expect(f.title).toBe('Ratelimit namespace 1001 shared by 3 Workers');
+    expect(f.title).toBe('Rate-limit namespace 1001 shared by 3 Workers');
     expect(f.source).toBe('api+local');
     expect(f.detail).toContain('blog-staging.PAGE_LIMIT');
   });

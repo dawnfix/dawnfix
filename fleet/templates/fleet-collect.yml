@@ -12,10 +12,10 @@
 # Repository settings this needs (none of them have defaults, on purpose):
 #   vars.FLEET_HUB_ROLE_ARN        the hub role's ARN
 #   vars.FLEET_BOARD_URL           https base URL of the board; the job appends /v1/fleet/summary
-#                                  (needed only with FLEET_AGENCY_KEY)
+#                                  (needed only with DAWNFIX_ENTERPRISE_KEY)
 #   vars.FLEET_COLLECTOR_SPEC      what to pip install: the public repo's fleet/collector/ (and
 #                                  core/) at a pinned ref, a wheel URL, or package==version
-#   secrets.FLEET_AGENCY_KEY       optional: the agency's Enterprise key for the hosted board.
+#   secrets.DAWNFIX_ENTERPRISE_KEY optional: the agency's Enterprise key for the hosted board.
 #                                  Without it the collector runs the same, the summary stays
 #                                  in the job log and nothing is sent anywhere
 #   secrets.FLEET_EXTERNAL_ID_<SLUG>   one per client (GitHub upper-cases secret names)
@@ -91,20 +91,20 @@ jobs:
       - name: Send to the board
         env:
           BOARD: ${{ vars.FLEET_BOARD_URL }}
-          FLEET_AGENCY_KEY: ${{ secrets.FLEET_AGENCY_KEY }}
+          DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
           CLIENT: ${{ matrix.client }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="The Fleet board needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
           say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
-          if [ -z "$FLEET_AGENCY_KEY" ]; then
+          if [ -z "$DAWNFIX_ENTERPRISE_KEY" ]; then
             say_need_key
             echo "Nothing sent. The summary (numbers and enums only):"
             jq -c . summary.json
             exit 0
           fi
           case "$BOARD" in https://*) ;; *) echo "::warning::FLEET_BOARD_URL must be an https base URL; nothing sent"; exit 0 ;; esac
-          code=$(printf 'header = "Authorization: Bearer %s"\n' "$FLEET_AGENCY_KEY" |
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_ENTERPRISE_KEY" |
             curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
               -K - -X POST "${BOARD%/}/v1/fleet/summary" \
               -H "Content-Type: application/json" \

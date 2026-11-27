@@ -15,7 +15,7 @@ export const CHECK_NAMES: Record<CheckId, string> = {
   'workers-dev-enabled': 'workers.dev exposure',
   'preview-urls-enabled': 'Preview URLs',
   'hostname-without-auth': 'Hostname without auth',
-  'ratelimit-namespace-shared': 'Ratelimit namespace clash',
+  'ratelimit-namespace-shared': 'Rate-limit namespace clash',
   'route-to-missing-script': 'Route to missing Worker',
   'dangling-dns': 'Dangling DNS',
   'dead-script': 'Dead script',

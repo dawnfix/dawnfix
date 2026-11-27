@@ -10,8 +10,7 @@ Create a skill named leastpriv that trims one IAM role to least privilege with D
 Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-leastpriv"
   "$HOME/.cache/dawnfix-leastpriv/bin/pip" install dawnfix
-(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
-"dawnfix-leastpriv @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=leastpriv", REF a release tag.)
+(Without PyPI: pip install "dawnfix @ git+https://github.com/dawnfix/dawnfix@REF", REF a release tag.)
 REF below is the release: v followed by what `leastpriv --version` prints.
 LP = "$HOME/.cache/dawnfix-leastpriv/bin/leastpriv".
 

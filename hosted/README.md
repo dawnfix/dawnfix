@@ -5,7 +5,7 @@ board). Everything else in this repo runs without it.
 
 `service.sh` talks to the hosted service with your Enterprise key. Run it in your own
 terminal, so the key never passes through a coding agent or a chat. The key comes from
-`$DAWNFIX_ENTERPRISE_KEY` (or the older `$DAWNFIX_LICENSE`), or the script asks for it without echo.
+`$DAWNFIX_ENTERPRISE_KEY`, or the script asks for it without echo.
 
 ```sh
 hosted/service.sh license                                  # what the key covers

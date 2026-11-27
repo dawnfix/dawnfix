@@ -1,5 +1,5 @@
-# .dawnfix.yml - what Dawnfix watches and what it may do (docs/spec.md section 4.2).
-# Copy to .dawnfix.yml at the repo root (README.md, "Set up"); every value below is an example to replace.
+# .dawnfix.yml - what Dawnfix watches and what it may do.
+# Copy to .dawnfix.yml at the repo root (README.md, "Quick start"), or let `npx dawnfix init` write it; every value below is an example to replace.
 # Check it with: dawnfix validate --config .dawnfix.yml
 version: 1
 

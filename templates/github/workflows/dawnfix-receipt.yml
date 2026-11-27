@@ -34,8 +34,7 @@
 #   vars.DAWNFIX_INGEST_URL          base URL of the hosted service; default https://dawnfix.dev
 #   vars.DAWNFIX_CORE_REF            fallback: a tag or commit SHA of dawnfix/dawnfix to install
 #                                    from git instead of PyPI (optional)
-#   secrets.DAWNFIX_ENTERPRISE_KEY   optional Dawnfix Enterprise key (the older name
-#                                    DAWNFIX_LICENSE also works), sent only as the bearer
+#   secrets.DAWNFIX_ENTERPRISE_KEY   optional Dawnfix Enterprise key, sent only as the bearer
 #                                    token to the hosted service. Without it the receipt runs
 #                                    the same and nothing is sent anywhere
 #
@@ -79,7 +78,7 @@ permissions: {}
 # This release of github.com/dawnfix/dawnfix: the job installs dawnfix==DAWNFIX_VERSION (core
 # and receipt) from PyPI. CORE_REF is the fallback: a tag or commit SHA to install from git.
 env:
-  DAWNFIX_VERSION: "0.3.0"
+  DAWNFIX_VERSION: "0.3.1"
   CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:
@@ -231,17 +230,17 @@ jobs:
         if: steps.receipts.outputs.ran != '' && steps.receipts.outputs.ran != '0'
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
+          DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted Receipt history (status page and digest) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
           say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
           doc="$OUT/receipt-ingest.json"
-          if [ -z "$DAWNFIX_LICENSE" ]; then
+          if [ -z "$DAWNFIX_ENTERPRISE_KEY" ]; then
             say_need_key
             exit 0
           fi
-          case "$DAWNFIX_LICENSE" in
+          case "$DAWNFIX_ENTERPRISE_KEY" in
             *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
@@ -256,7 +255,7 @@ jobs:
           echo "Sending exactly this (counts only: no SHA, no totals, no usage types, no tags):"
           jq -c . "$doc"
           resp="$OUT/receipt-response.json"
-          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_ENTERPRISE_KEY" |
             curl --silent --show-error --proto '=https' \
               --connect-timeout 5 --max-time 15 --retry 2 --retry-max-time 30 \
               -K - -X POST "$base/v1/receipt" \

@@ -20,7 +20,7 @@ Hard rules:
 
 Before step 1, tell me plainly what this costs me (Dawnfix itself is free, no key): my own
 Anthropic tokens, only on runs that find a new error; GitHub Actions minutes (the hourly read
-job is about a minute a run, ~750 a month; free on public repos); small CloudWatch API charges
+job is about a minute a run, ~720 a month; free on public repos); small CloudWatch API charges
 (GetMetricData $0.01 per 1,000 metrics, for load balancer 5xx).
 
 0. Tools: Node 20+ (for npx) and Python 3.11+. Install the Python CLI from PyPI:
@@ -29,8 +29,7 @@ job is about a minute a run, ~750 a month; free on public repos); small CloudWat
    the release, VERSION. Fetch the repo at that release for the infra files:
    git clone --quiet --branch vVERSION https://github.com/dawnfix/dawnfix "$HOME/.cache/dawnfix-src"
    (or fetch and check out vVERSION if it exists). Call it SRC. (Fallback without PyPI: pip
-   install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@vVERSION#subdirectory=core";
-   any git ref used this way, or as the workflow's core-ref, must be v0.2.0 or later: older
+   install "dawnfix @ git+https://github.com/dawnfix/dawnfix@vVERSION"; any git ref used this way, or as the workflow's core-ref, must be v0.2.0 or later: older
    refs have no prompts/ci/.)
 1. Detect: GitHub repo (git remote, gh repo view --json nameWithOwner,defaultBranchRef),
    default branch, language and test command (package.json "test", pytest, go test ./...,

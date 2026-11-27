@@ -2,7 +2,7 @@
 // in a temp dir (no network: the package has no dependencies) and run it from there.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -42,7 +42,14 @@ test('npm publish --dry-run: npm corrects and drops nothing in package.json (a "
     assert.doesNotMatch(path, /^\.\//, `bin.${name} must not start with ./`);
     assert.ok(existsSync(join(CLI_DIR, path)), `bin.${name} points at ${path}, which exists`);
   }
-  const r = spawnSync(npm, ['publish', '--dry-run', '--ignore-scripts', '--json'], { cwd: CLI_DIR, encoding: 'utf8' });
+  // A copy at a prerelease version nobody publishes, so the check works after the release too
+  // (npm refuses a dry run over a version that is already on the registry).
+  const copy = mkdtempSync(join(tmpdir(), 'dawnfix-publish-'));
+  for (const f of ['README.md', 'dist/cli.js']) cpSync(join(CLI_DIR, f), join(copy, f));
+  cpSync(join(REPO_ROOT, 'LICENSE'), join(copy, 'LICENSE'));
+  const { scripts: _scripts, ...rest } = manifest;
+  writeFileSync(join(copy, 'package.json'), JSON.stringify({ ...rest, version: `${manifest.version}-dryrun.${Date.now()}` }, null, 2));
+  const r = spawnSync(npm, ['publish', '--dry-run', '--ignore-scripts', '--json', '--tag', 'dryrun'], { cwd: copy, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   const log = `${r.stdout}\n${r.stderr}`;
   assert.doesNotMatch(log, /auto-corrected|invalid and removed|errors corrected/i, log);
