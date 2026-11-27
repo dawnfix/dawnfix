@@ -120,6 +120,7 @@ jobs:
       - name: Pack the npm package
         working-directory: cli
         run: |
+          npm ci
           mkdir -p "$RUNNER_TEMP/npm"
           npm pack --pack-destination "$RUNNER_TEMP/npm"
           tar tzf "$RUNNER_TEMP"/npm/dawnfix-*.tgz
