@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-parity"
+version = "0.1.0"
+description = "Read-only config parity and secret inventory for config kept in AWS (SSM, Secrets Manager, ECS, Lambda)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+authors = [{ name = "Dawnfix" }]
+keywords = ["sre", "aws", "config-drift", "secrets-manager", "ssm-parameter-store"]
+dependencies = [
+    "PyYAML>=6.0",
+    "boto3>=1.28",
+    "dawnfix-core",   # the read-only client guard; installed from ../core (see Makefile)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "jsonschema>=4.18"]
+
+[project.scripts]
+parity = "dawnfix_parity.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

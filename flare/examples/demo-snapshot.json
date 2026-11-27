@@ -1,0 +1,525 @@
+{
+  "takenAt": "2026-10-27T12:00:00.000Z",
+  "accounts": [
+    {
+      "id": "0123456789abcdef0123456789abcdef",
+      "name": "Example Co",
+      "gaps": [],
+      "workersSubdomain": "acme-sub",
+      "scripts": [
+        {
+          "name": "shop",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-20T10:00:00Z",
+          "compatibilityDate": "2026-09-01",
+          "handlers": [
+            "fetch"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": true,
+            "previewsEnabled": true
+          },
+          "bindings": [
+            {
+              "type": "ratelimit",
+              "name": "PAGE_LIMIT",
+              "namespaceId": "1001"
+            },
+            {
+              "type": "service",
+              "name": "API",
+              "service": "api"
+            },
+            {
+              "type": "secret_text",
+              "name": "API_KEY"
+            }
+          ],
+          "secretNames": [
+            "API_KEY",
+            "STRIPE_KEY"
+          ],
+          "lastDeployedOn": "2026-10-20T10:00:00Z"
+        },
+        {
+          "name": "blog",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-01T10:00:00Z",
+          "compatibilityDate": "2023-01-01",
+          "handlers": [
+            "fetch"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [
+            {
+              "type": "ratelimit",
+              "name": "PAGE_LIMIT",
+              "namespaceId": "1001"
+            }
+          ],
+          "secretNames": [],
+          "lastDeployedOn": "2026-10-01T10:00:00Z"
+        },
+        {
+          "name": "admin",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-01T10:00:00Z",
+          "compatibilityDate": "2026-06-01",
+          "handlers": [
+            "fetch"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [
+            {
+              "type": "ratelimit",
+              "name": "PAGE_LIMIT",
+              "namespaceId": "1101"
+            },
+            {
+              "type": "ratelimit",
+              "name": "FORM_LIMIT",
+              "namespaceId": "1101"
+            }
+          ],
+          "secretNames": [],
+          "lastDeployedOn": "2026-10-01T10:00:00Z"
+        },
+        {
+          "name": "internal",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-01T10:00:00Z",
+          "compatibilityDate": "2026-06-01",
+          "handlers": [
+            "fetch"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [],
+          "secretNames": [],
+          "lastDeployedOn": "2026-10-01T10:00:00Z"
+        },
+        {
+          "name": "old-cron",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2025-01-01T10:00:00Z",
+          "compatibilityDate": "2025-06-01",
+          "handlers": [
+            "scheduled"
+          ],
+          "routes": [],
+          "crons": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [],
+          "secretNames": [],
+          "lastDeployedOn": "2025-01-01T10:00:00Z"
+        },
+        {
+          "name": "queue-consumer",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-01T10:00:00Z",
+          "compatibilityDate": "2026-06-01",
+          "handlers": [
+            "queue"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [],
+          "secretNames": [],
+          "lastDeployedOn": "2026-10-01T10:00:00Z"
+        },
+        {
+          "name": "api",
+          "createdOn": "2024-01-01T00:00:00Z",
+          "modifiedOn": "2026-10-01T10:00:00Z",
+          "compatibilityDate": "2026-06-01",
+          "handlers": [
+            "fetch"
+          ],
+          "routes": [],
+          "subdomain": {
+            "enabled": false,
+            "previewsEnabled": false
+          },
+          "bindings": [],
+          "secretNames": [],
+          "lastDeployedOn": "2026-10-01T10:00:00Z"
+        }
+      ],
+      "customDomains": [
+        {
+          "hostname": "shop.example.com",
+          "service": "shop",
+          "zoneId": "aaaa0000aaaa0000aaaa0000aaaa0000",
+          "zoneName": "example.com"
+        },
+        {
+          "hostname": "admin.example.com",
+          "service": "admin",
+          "zoneId": "aaaa0000aaaa0000aaaa0000aaaa0000",
+          "zoneName": "example.com"
+        },
+        {
+          "hostname": "old.example.com",
+          "service": "removed-worker",
+          "zoneId": "aaaa0000aaaa0000aaaa0000aaaa0000",
+          "zoneName": "example.com"
+        }
+      ],
+      "zones": [
+        {
+          "id": "aaaa0000aaaa0000aaaa0000aaaa0000",
+          "name": "example.com",
+          "status": "active",
+          "routes": [
+            {
+              "id": "r1",
+              "pattern": "blog.example.com/*",
+              "script": "blog"
+            },
+            {
+              "id": "r2",
+              "pattern": "internal.example.com/*",
+              "script": "internal"
+            },
+            {
+              "id": "r3",
+              "pattern": "legacy.example.com/*",
+              "script": "ghost"
+            },
+            {
+              "id": "r4",
+              "pattern": "blog.example.com/static/*"
+            }
+          ],
+          "dns": [
+            {
+              "id": "A-example.com",
+              "type": "A",
+              "name": "example.com",
+              "content": "203.0.113.10",
+              "proxied": true
+            },
+            {
+              "id": "CNAME-www.example.com",
+              "type": "CNAME",
+              "name": "www.example.com",
+              "content": "example.com",
+              "proxied": true
+            },
+            {
+              "id": "AAAA-shop.example.com",
+              "type": "AAAA",
+              "name": "shop.example.com",
+              "content": "100::",
+              "proxied": true
+            },
+            {
+              "id": "AAAA-blog.example.com",
+              "type": "AAAA",
+              "name": "blog.example.com",
+              "content": "100::",
+              "proxied": true
+            },
+            {
+              "id": "AAAA-internal.example.com",
+              "type": "AAAA",
+              "name": "internal.example.com",
+              "content": "100::",
+              "proxied": true
+            },
+            {
+              "id": "AAAA-legacy.example.com",
+              "type": "AAAA",
+              "name": "legacy.example.com",
+              "content": "100::",
+              "proxied": true
+            },
+            {
+              "id": "A-stale.example.com",
+              "type": "A",
+              "name": "stale.example.com",
+              "content": "192.0.2.1",
+              "proxied": true
+            },
+            {
+              "id": "CNAME-docs.example.com",
+              "type": "CNAME",
+              "name": "docs.example.com",
+              "content": "docs-old.example.com",
+              "proxied": true
+            },
+            {
+              "id": "CNAME-status.example.com",
+              "type": "CNAME",
+              "name": "status.example.com",
+              "content": "gone.acme-sub.workers.dev",
+              "proxied": true
+            },
+            {
+              "id": "CNAME-edge.example.com",
+              "type": "CNAME",
+              "name": "edge.example.com",
+              "content": "shop.other-sub.workers.dev",
+              "proxied": true
+            },
+            {
+              "id": "CNAME-cdn.example.com",
+              "type": "CNAME",
+              "name": "cdn.example.com",
+              "content": "assets.example.org",
+              "proxied": true
+            },
+            {
+              "id": "MX-mail.example.com",
+              "type": "MX",
+              "name": "mail.example.com",
+              "content": "mx.example.net",
+              "proxied": false
+            }
+          ],
+          "settings": {
+            "minTlsVersion": "1.0",
+            "alwaysUseHttps": "off",
+            "hsts": {
+              "enabled": false,
+              "maxAge": 0,
+              "includeSubdomains": false
+            }
+          }
+        },
+        {
+          "id": "bbbb0000bbbb0000bbbb0000bbbb0000",
+          "name": "example.org",
+          "status": "active",
+          "routes": [],
+          "dns": [
+            {
+              "id": "A-example.org",
+              "type": "A",
+              "name": "example.org",
+              "content": "203.0.113.20",
+              "proxied": true
+            },
+            {
+              "id": "A-*.example.org",
+              "type": "A",
+              "name": "*.example.org",
+              "content": "203.0.113.20",
+              "proxied": true
+            }
+          ],
+          "settings": {
+            "minTlsVersion": "1.2",
+            "alwaysUseHttps": "on",
+            "hsts": {
+              "enabled": true,
+              "maxAge": 31536000,
+              "includeSubdomains": true
+            }
+          }
+        }
+      ],
+      "accessApps": [
+        {
+          "id": "app1",
+          "name": "Admin",
+          "type": "self_hosted",
+          "domains": [
+            "admin.example.com"
+          ]
+        },
+        {
+          "id": "app2",
+          "name": "Internal admin path",
+          "type": "self_hosted",
+          "domains": [
+            "internal.example.com/admin"
+          ]
+        }
+      ],
+      "tokens": [
+        {
+          "id": "tok-ci",
+          "name": "ci-deploy",
+          "status": "active",
+          "lastUsedOn": "2026-10-25T00:00:00Z",
+          "issuedOn": "2025-03-01T00:00:00Z",
+          "ipRestricted": false,
+          "policies": [
+            {
+              "effect": "allow",
+              "permissionGroups": [
+                "Workers Scripts Write",
+                "Zone Read"
+              ],
+              "resources": [
+                "com.cloudflare.api.account.*"
+              ]
+            }
+          ],
+          "scope": "account"
+        },
+        {
+          "id": "tok-audit",
+          "name": "readonly-audit",
+          "status": "active",
+          "expiresOn": "2027-04-01T00:00:00Z",
+          "lastUsedOn": "2026-10-26T00:00:00Z",
+          "issuedOn": "2026-10-01T00:00:00Z",
+          "ipRestricted": true,
+          "policies": [
+            {
+              "effect": "allow",
+              "permissionGroups": [
+                "Workers Scripts Read",
+                "Zone Read"
+              ],
+              "resources": [
+                "com.cloudflare.api.account.0123456789abcdef0123456789abcdef"
+              ]
+            }
+          ],
+          "scope": "account"
+        },
+        {
+          "id": "tok-off",
+          "name": "disabled-one",
+          "status": "disabled",
+          "ipRestricted": false,
+          "policies": [],
+          "scope": "account"
+        },
+        {
+          "id": "tok-laptop",
+          "name": "old-laptop",
+          "status": "active",
+          "expiresOn": "2027-01-01T00:00:00Z",
+          "lastUsedOn": "2025-12-01T00:00:00Z",
+          "issuedOn": "2025-01-01T00:00:00Z",
+          "ipRestricted": false,
+          "policies": [
+            {
+              "effect": "allow",
+              "permissionGroups": [
+                "DNS Read"
+              ],
+              "resources": [
+                "com.cloudflare.api.account.zone.aaaa0000aaaa0000aaaa0000aaaa0000"
+              ]
+            }
+          ],
+          "scope": "user"
+        }
+      ]
+    }
+  ],
+  "local": [
+    {
+      "name": "blog",
+      "file": "~/blog/wrangler.toml",
+      "compatibilityDate": "2023-01-01",
+      "workersDev": false,
+      "previewUrls": false,
+      "routes": [
+        {
+          "pattern": "blog.example.com/*",
+          "customDomain": false
+        }
+      ],
+      "ratelimitNamespaces": [
+        {
+          "binding": "PAGE_LIMIT",
+          "namespaceId": "1001"
+        }
+      ],
+      "authMarkers": []
+    },
+    {
+      "name": "blog-staging",
+      "file": "~/blog/wrangler.toml",
+      "env": "staging",
+      "compatibilityDate": "2023-01-01",
+      "workersDev": true,
+      "previewUrls": false,
+      "routes": [
+        {
+          "pattern": "blog.example.com/*",
+          "customDomain": false
+        }
+      ],
+      "ratelimitNamespaces": [
+        {
+          "binding": "PAGE_LIMIT",
+          "namespaceId": "1001"
+        }
+      ],
+      "authMarkers": []
+    },
+    {
+      "name": "shop",
+      "file": "~/shop/wrangler.jsonc",
+      "compatibilityDate": "2026-09-01",
+      "routes": [
+        {
+          "pattern": "shop.example.com",
+          "customDomain": true
+        }
+      ],
+      "ratelimitNamespaces": [
+        {
+          "binding": "PAGE_LIMIT",
+          "namespaceId": "1001"
+        }
+      ],
+      "authMarkers": []
+    },
+    {
+      "name": "portal",
+      "file": "~/tools/apps/portal/wrangler.jsonc",
+      "compatibilityDate": "2026-10-01",
+      "workersDev": false,
+      "previewUrls": false,
+      "routes": [
+        {
+          "pattern": "portal.example.net",
+          "customDomain": true
+        }
+      ],
+      "ratelimitNamespaces": [
+        {
+          "binding": "FORM_LIMIT",
+          "namespaceId": "2001"
+        }
+      ],
+      "authMarkers": [
+        "passkey / WebAuthn",
+        "sign-in route"
+      ]
+    }
+  ],
+  "localGaps": [
+    {
+      "account": "local",
+      "what": "~/broken/wrangler.toml",
+      "reason": "could not parse: TOML line 2: expected , or } in inline table"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+# Copy to .github/workflows/parity.yml.
+# Needs: an IAM role trusting GitHub OIDC (iam/github-oidc-trust-policy.json) with
+# iam/parity-read-only-policy.json attached, and its ARN in the PARITY_ROLE_ARN variable.
+name: config parity
+
+on:
+  # Not on pull_request: the role trusts only the default branch, so a PR's
+  # (possibly modified) workflow can never assume it.
+  push:
+    branches: [main]
+    paths: [".parity.yml", "infra/**", "**/task-definition*.json"]
+  schedule:
+    - cron: "23 6 * * 1-5"     # weekdays, off the hour
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC token for AWS
+  contents: read
+
+concurrency:
+  group: parity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.PARITY_ROLE_ARN }}
+          aws-region: eu-central-1
+          role-session-name: parity-${{ github.run_id }}
+
+      # Two accounts? Keep this one role and set role_arn per environment in .parity.yml;
+      # parity assumes each (read-only) role itself.
+      - uses: dawnfix/dawnfix/parity@v0
+        with:
+          left: dev
+          right: prod
+          # compare-hashes: "true"
+          # fail-on: missing_in_right,type_mismatch,dangling_reference,cross_env_reference

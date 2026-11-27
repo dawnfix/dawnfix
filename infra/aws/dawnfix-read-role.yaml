@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Dawnfix read-only role. Lets one GitHub repository's dawnfix workflow (default branch
+  or one GitHub environment) read CloudWatch Logs, alarms, metrics and load balancer health
+  through GitHub OIDC. No write actions, no long-lived keys.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "GitHub repository allowed to assume the role" }
+        Parameters: [GitHubOrg, GitHubRepo, Branch, Environment]
+      - Label: { default: "GitHub OIDC provider (one per AWS account)" }
+        Parameters: [CreateOIDCProvider, ExistingOIDCProviderArn]
+      - Label: { default: "Scope" }
+        Parameters: [RoleName, LogGroupPrefix]
+    ParameterLabels:
+      CreateOIDCProvider: { default: "Create the GitHub OIDC provider?" }
+      ExistingOIDCProviderArn: { default: "Existing provider ARN (when not creating)" }
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    Description: GitHub organization or user that owns the repository (case as on GitHub).
+    AllowedPattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+  GitHubRepo:
+    Type: String
+    Description: Repository name, without the org.
+    AllowedPattern: "^[A-Za-z0-9_.-]{1,100}$"
+  Branch:
+    Type: String
+    Default: main
+    Description: Branch whose workflow runs may assume the role (scheduled runs use the default branch). Ignored when Environment is set.
+    AllowedPattern: "^[A-Za-z0-9_./-]{1,255}$"
+  Environment:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional GitHub environment name. When set, the trust is
+      repo:ORG/REPO:environment:NAME instead of the branch form, and the read job must
+      declare `environment: NAME`.
+    AllowedPattern: "^[A-Za-z0-9_. -]{0,255}$"
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      An account can hold only one provider for token.actions.githubusercontent.com. Choose
+      false if it already exists (IAM > Identity providers) and give its ARN below.
+  ExistingOIDCProviderArn:
+    Type: String
+    Default: ""
+    Description: "arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com (only when CreateOIDCProvider is false)."
+  RoleName:
+    Type: String
+    Default: dawnfix-read
+    Description: Name of the role. Use a different name per repository when one account serves several.
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+  LogGroupPrefix:
+    Type: String
+    Default: "*"
+    Description: >-
+      Log groups the role may read, as a name pattern ending in * (for example "ecs-*" or
+      "/aws/lambda/api-*"). The default "*" allows every log group in the account.
+    AllowedPattern: "^[A-Za-z0-9_./#-]*\\*$"
+    ConstraintDescription: must be a log group name prefix ending in *
+
+Rules:
+  ExistingProviderGiven:
+    RuleCondition: !Equals [!Ref CreateOIDCProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOIDCProviderArn, ""]]
+        AssertDescription: ExistingOIDCProviderArn is required when CreateOIDCProvider is false.
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+  HasEnvironment: !Not [!Equals [!Ref Environment, ""]]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      # IAM no longer checks thumbprints for this provider; kept for older tooling.
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  ReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Dawnfix read-only access to logs, alarms, metrics and ALB health (GitHub OIDC).
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubOIDCThisRepoOnly
+            Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref GitHubOIDCProvider, !Ref ExistingOIDCProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !If
+                  - HasEnvironment
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:environment:${Environment}"
+                  - !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${Branch}"
+      Policies:
+        - PolicyName: dawnfix-read-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadLogEventsInScope
+                Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                  - logs:StartQuery
+                # Covers both log-group:NAME and log-group:NAME:log-stream:* forms.
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:${LogGroupPrefix}"
+              - Sid: DescribeAndQueryResults
+                Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:StopQuery
+                  - logs:GetQueryResults
+                Resource: "*"
+              - Sid: AlarmsAndMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: "*"
+              - Sid: LoadBalancerHealth
+                Effect: Allow
+                Action:
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: "*"
+      Tags:
+        - Key: managed-by
+          Value: dawnfix
+
+Outputs:
+  RoleArn:
+    Description: Put this in the repository variable DAWNFIX_AWS_ROLE_ARN (and `role:` in .dawnfix.yml).
+    Value: !GetAtt ReadRole.Arn
+  OIDCProviderArn:
+    Description: The GitHub OIDC provider the role trusts.
+    Value: !If [CreateProvider, !Ref GitHubOIDCProvider, !Ref ExistingOIDCProviderArn]

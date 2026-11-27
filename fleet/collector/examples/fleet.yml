@@ -1,0 +1,27 @@
+# fleet.yml — run on the agency's own runner, one `fleet collect --client <slug>` per client.
+# Clients are keyed by their board slug (from POST /v1/clients), never by name.
+version: 1
+clients:
+  k3m9x2a7b4cd:
+    accounts:
+      - provider: aws
+        env: prod
+        account_id: "111122223333"
+        role_arn: arn:aws:iam::111122223333:role/fleet-read
+        external_id_env: FLEET_EXTERNAL_ID   # the workflow fills it from secrets.FLEET_EXTERNAL_ID_<SLUG>
+        regions: [us-east-1, eu-west-1]
+      - provider: aws
+        env: staging
+        account_id: "444455556666"
+        role_arn: arn:aws:iam::444455556666:role/fleet-read
+        external_id_env: FLEET_EXTERNAL_ID
+        regions: [eu-west-1]
+        checks: [alarms, certs]                      # no Cost Explorer for staging
+  p7q2r8s4t6uv:
+    accounts:
+      # This client runs the collector in its own GitHub Actions: OIDC straight into its
+      # own read role, so no role_arn and no External ID.
+      - provider: aws
+        env: prod
+        account_id: "777788889999"
+        regions: [us-west-2]

@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-leastpriv"
+version = "0.1.0"
+description = "Least-privilege IAM role trim from last-accessed data, emitted as a reviewable JSON/Terraform/CloudFormation diff. Never applies."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+authors = [{ name = "Dawnfix" }]
+keywords = ["sre", "aws", "iam", "least-privilege", "security"]
+dependencies = [
+    "boto3>=1.28",
+    "dawnfix-core",   # the read-only client guard; installed from ../core (see Makefile)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "PyYAML>=6.0"]  # PyYAML: CloudFormation round-trip test only
+
+[project.scripts]
+leastpriv = "dawnfix_leastpriv.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

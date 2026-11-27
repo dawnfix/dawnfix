@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dawnfix.dev/schema/parity-ingest.schema.json",
+  "title": "dawnfix.parity/1",
+  "description": "What `parity check --ingest-out` writes and the CI workflow POSTs to /v1/parity (only with an Enterprise key). Counts, enums and one hashed id only: no key name, no parameter or secret name, no value, no ARN, no account id, no environment name. Every object is closed. Brand and host are TEMPORARY.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "pair", "hashed", "result", "keys", "findings", "allowed", "failing", "inventory"],
+  "properties": {
+    "schema": { "const": "dawnfix.parity/1" },
+    "generated_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$",
+      "maxLength": 20
+    },
+    "pair": {
+      "description": "First 16 hex digits of SHA-256(\"dawnfix.parity/1\\0\" + left + \"\\0\" + right): a stable id for the environment pair, so a trend can be drawn per pair. Environment names are low-entropy, so this is an id, not a secret.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "hashed": { "description": "--compare-hashes was on", "type": "boolean" },
+    "result": { "enum": ["pass", "drift"] },
+    "keys": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["left", "right", "references"],
+      "properties": {
+        "left": { "$ref": "#/$defs/count" },
+        "right": { "$ref": "#/$defs/count" },
+        "references": { "$ref": "#/$defs/count" }
+      }
+    },
+    "findings": {
+      "description": "Findings per kind, not counting allowed ones.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["missing_in_left", "missing_in_right", "type_mismatch", "dangling_reference", "cross_env_reference", "value_shared", "value_differs", "unverifiable_reference", "duplicate_key", "plaintext_secret"],
+      "properties": {
+        "missing_in_left": { "$ref": "#/$defs/count" },
+        "missing_in_right": { "$ref": "#/$defs/count" },
+        "type_mismatch": { "$ref": "#/$defs/count" },
+        "dangling_reference": { "$ref": "#/$defs/count" },
+        "cross_env_reference": { "$ref": "#/$defs/count" },
+        "value_shared": { "$ref": "#/$defs/count" },
+        "value_differs": { "$ref": "#/$defs/count" },
+        "unverifiable_reference": { "$ref": "#/$defs/count" },
+        "duplicate_key": { "$ref": "#/$defs/count" },
+        "plaintext_secret": { "$ref": "#/$defs/count" }
+      }
+    },
+    "allowed": { "description": "Findings matched by the allow-list", "$ref": "#/$defs/count" },
+    "failing": { "description": "Findings and inventory flags that failed the check", "$ref": "#/$defs/count" },
+    "inventory": {
+      "description": "null unless the check ran with --inventory (or failed on an inventory flag). Secrets and parameters of both environments.",
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["items", "flags"],
+          "properties": {
+            "items": { "$ref": "#/$defs/count" },
+            "flags": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["unread", "never_rotated", "rotation_overdue", "orphaned"],
+              "properties": {
+                "unread": { "$ref": "#/$defs/count" },
+                "never_rotated": { "$ref": "#/$defs/count" },
+                "rotation_overdue": { "$ref": "#/$defs/count" },
+                "orphaned": { "$ref": "#/$defs/count" }
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "dawnfix-flare",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dawnfix Flare: read-only audit of Cloudflare accounts and Workers fleets: exposure, auth gaps, namespace clashes, dangling DNS, stale scripts, token scope, zone TLS. A free tool from Dawnfix, the AI SRE.",
+  "keywords": [
+    "cloudflare",
+    "cloudflare-workers",
+    "security-audit",
+    "sre",
+    "wrangler"
+  ],
+  "license": "FSL-1.1-ALv2",
+  "author": "Dawnfix",
+  "type": "module",
+  "bin": {
+    "flare": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/cli.js",
+    "schema/",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "build:check": "node build.mjs --check",
+    "audit": "node dist/cli.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.core.json",
+    "test": "vitest run",
+    "sample": "node dist/cli.js --snapshot-in examples/demo-snapshot.json --ingest-out examples/demo-ingest.json --fail-on never > /dev/null"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "esbuild": "0.28.2",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

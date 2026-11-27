@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "fleet-summary.schema.json",
+  "title": "Fleet summary: one client's accounts, one collection",
+  "description": "The only data the fleet collector sends to the hosted board. Enums, counts, cents, day-of-expiry numbers, a date and a hashed account reference; no names, no ARNs, no account ids, no regions, no free text. The board rejects anything that does not validate. When a check's status is not ok, every number in it is null.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "accounts"],
+  "properties": {
+    "schema": { "const": "dawnfix.fleet/1" },
+    "generated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "accounts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["account", "provider", "env", "credential", "alarms", "spend", "certs", "orphans"],
+        "properties": {
+          "account": {
+            "description": "First 16 hex of sha256(client slug, provider, account id). Stable identity, not secrecy.",
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$"
+          },
+          "provider": { "enum": ["aws", "gcp"] },
+          "env": { "enum": ["prod", "staging", "dev", "shared", "other"] },
+          "credential": { "enum": ["ok", "denied", "expired", "throttled", "account_mismatch", "error"] },
+          "alarms": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "firing", "stuck_24h"],
+            "properties": {
+              "status": { "$ref": "#/$defs/status" },
+              "firing": { "$ref": "#/$defs/count_or_null" },
+              "stuck_24h": { "$ref": "#/$defs/count_or_null" }
+            }
+          },
+          "spend": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "cached", "currency", "as_of", "this_week_cents", "last_week_cents"],
+            "properties": {
+              "status": { "$ref": "#/$defs/status" },
+              "cached": { "type": "boolean" },
+              "currency": { "enum": [null, "USD", "EUR", "GBP", "CHF", "CAD", "AUD", "JPY", "OTHER"] },
+              "as_of": {
+                "oneOf": [ { "type": "null" }, { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" } ]
+              },
+              "this_week_cents": { "$ref": "#/$defs/cents_or_null" },
+              "last_week_cents": { "$ref": "#/$defs/cents_or_null" }
+            }
+          },
+          "certs": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "total", "in_use", "expired", "expiring_14d", "expiring_30d",
+                         "manual_renewal_30d", "min_days_left", "truncated"],
+            "properties": {
+              "status": { "$ref": "#/$defs/status" },
+              "total": { "$ref": "#/$defs/count_or_null" },
+              "in_use": { "$ref": "#/$defs/count_or_null" },
+              "expired": { "$ref": "#/$defs/count_or_null" },
+              "expiring_14d": { "$ref": "#/$defs/count_or_null" },
+              "expiring_30d": { "$ref": "#/$defs/count_or_null" },
+              "manual_renewal_30d": { "$ref": "#/$defs/count_or_null" },
+              "min_days_left": {
+                "description": "Days until the soonest in-use certificate expires (negative: expired). Null when none is in use.",
+                "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": -36500, "maximum": 36500 } ]
+              },
+              "truncated": { "type": "boolean" }
+            }
+          },
+          "orphans": {
+            "description": "Placeholder: unattached volumes, idle IPs, old snapshots. Not collected yet.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["status", "count"],
+            "properties": {
+              "status": { "$ref": "#/$defs/status" },
+              "count": { "$ref": "#/$defs/count_or_null" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "status": { "enum": ["ok", "denied", "throttled", "error", "skipped", "not_implemented"] },
+    "count_or_null": {
+      "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": 0, "maximum": 1000000 } ]
+    },
+    "cents_or_null": {
+      "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": -10000000000000, "maximum": 10000000000000 } ]
+    }
+  }
+}

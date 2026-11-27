@@ -1,0 +1,241 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Part of Dawnfix (https://github.com/dawnfix/dawnfix), source available under the Functional
+# Source License 1.1, ALv2 Future License: see LICENSE at the root of that repo.
+#
+# Dawnfix Parity in CI: the parity check on a schedule and on config pushes, and (with an
+# Enterprise key) the data behind the weekly secrets email and the status page. The CLI it
+# runs is parity/ (`parity diff`, `parity inventory`, `parity check`).
+#
+# Weekly (Mondays, before the 06:30 UTC digest) and on every push to main that touches
+# config, task definitions or IaC: `parity check` between two environments, read-only.
+#
+# Setup (parity/README.md, or prompts/parity-ci.md for a coding agent): copy this file to
+# .github/workflows/dawnfix-parity.yml and replace this placeholder (none may survive):
+#   DAWNFIX_PARITY_REF   tag or commit SHA of the public repo (dawnfix/dawnfix) to install dawnfix-core and dawnfix-parity from
+# and adjusts `push: paths:` to where the repo keeps task definitions and IaC.
+#
+# Repository settings it relies on (Settings > Secrets and variables > Actions):
+#   vars.PARITY_LEFT                 environment name in .parity.yml; default dev
+#   vars.PARITY_RIGHT                environment name in .parity.yml; default prod
+#   vars.PARITY_LEFT_ROLE_ARN        read-only role in the left environment's account,
+#                                    trusting GitHub OIDC (parity/iam/)
+#   vars.PARITY_RIGHT_ROLE_ARN       same for the right environment; unset = the left role
+#                                    reads both (one account)
+#   vars.PARITY_AWS_REGION           region for STS; default us-east-1 (.parity.yml sets each
+#                                    environment's own region)
+#   vars.PARITY_FAIL_ON              optional `--fail-on` list; default parity's
+#   vars.DAWNFIX_INGEST_URL        base URL of the hosted service; default https://dawnfix.dev
+#   secrets.DAWNFIX_LICENSE        optional Dawnfix Enterprise key, sent only as the bearer
+#                                    token to the hosted service. Without it the check runs
+#                                    the same and nothing is sent anywhere
+#
+# What goes where:
+#   - Key, parameter, secret and function names: only in this job's summary, in GitHub.
+#   - Values: never read (no --compare-hashes here; the metadata policy cannot read them).
+#   - The hosted service gets $OUT/parity-ingest.json (dawnfix.parity/1,
+#     parity/schema/parity-ingest.schema.json): counts per finding kind and per inventory
+#     flag and a hashed environment-pair id, printed in the log before it is sent.
+#     With an Enterprise key only: POST {DAWNFIX_INGEST_URL}/v1/parity with the key as bearer token (read from
+#     stdin, never argv), X-Dawnfix-Repo and X-Dawnfix-Run: the weekly email and the
+#     status page link back to this run, where the names are.
+
+name: dawnfix-parity
+
+on:
+  schedule:
+    - cron: "41 5 * * 1" # Mondays 05:41 UTC: before the 06:30 digest, off the hour
+  push:
+    branches: [main]
+    paths:
+      - ".parity.yml"
+      - "**/task-definition*.json"
+      - "**/taskdef*.json"
+      - "**/*.tf"
+      - "**/serverless.yml"
+      - "**/template.yaml"
+      - "**/cdk.json"
+      - "infra/**"
+      - ".github/workflows/dawnfix-parity.yml"
+  workflow_dispatch:
+
+# One check at a time per repo; a push during a run waits for it.
+concurrency:
+  group: dawnfix-parity-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  check:
+    name: parity check (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout .parity.yml
+      id-token: write # GitHub OIDC -> one read-only AWS role per environment
+    env:
+      PARITY_REF: DAWNFIX_PARITY_REF
+      LEFT: ${{ vars.PARITY_LEFT || 'dev' }}
+      RIGHT: ${{ vars.PARITY_RIGHT || 'prod' }}
+      FAIL_ON: ${{ vars.PARITY_FAIL_ON }}
+      LEFT_PROFILE: dawnfix-parity-left
+      RIGHT_PROFILE: ${{ vars.PARITY_RIGHT_ROLE_ARN != '' && 'dawnfix-parity-right' || 'dawnfix-parity-left' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          sparse-checkout: .parity.yml
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Paths
+        run: |
+          mkdir -p "$RUNNER_TEMP/parity/out"
+          {
+            echo "OUT=$RUNNER_TEMP/parity/out"
+            echo "AWS_SHARED_CREDENTIALS_FILE=$RUNNER_TEMP/parity/credentials"
+            echo "AWS_CONFIG_FILE=$RUNNER_TEMP/parity/config"
+          } >> "$GITHUB_ENV"
+
+      - name: Install dawnfix-parity
+        run: |
+          base="git+https://github.com/dawnfix/dawnfix@${PARITY_REF}"
+          python -m pip install --disable-pip-version-check --quiet \
+            "dawnfix-core @ ${base}#subdirectory=core" \
+            "dawnfix-parity @ ${base}#subdirectory=parity"
+          parity -c .parity.yml validate
+
+      - name: AWS credentials, left environment (OIDC, read-only)
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.PARITY_LEFT_ROLE_ARN }}
+          aws-region: ${{ vars.PARITY_AWS_REGION || 'us-east-1' }}
+          role-session-name: dawnfix-parity-${{ github.run_id }}
+          role-duration-seconds: 900
+          mask-aws-account-id: true
+
+      # configure-aws-credentials exports one set of credentials; the next role would
+      # replace it. So each set is kept as a named profile in a file under RUNNER_TEMP
+      # (printf is a builtin: the keys never reach a process's argv).
+      - name: Keep left credentials as a profile
+        env:
+          PROFILE: dawnfix-parity-left
+        run: &keep |
+          if [ -z "${AWS_ACCESS_KEY_ID:-}" ] || [ -z "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+            echo "::error::no AWS credentials from the OIDC step"; exit 1
+          fi
+          umask 077
+          {
+            printf '[%s]\n' "$PROFILE"
+            printf 'aws_access_key_id = %s\n' "$AWS_ACCESS_KEY_ID"
+            printf 'aws_secret_access_key = %s\n' "$AWS_SECRET_ACCESS_KEY"
+            if [ -n "${AWS_SESSION_TOKEN:-}" ]; then printf 'aws_session_token = %s\n' "$AWS_SESSION_TOKEN"; fi
+            printf '\n'
+          } >> "$AWS_SHARED_CREDENTIALS_FILE"
+          echo "profile $PROFILE ready"
+
+      - name: AWS credentials, right environment (OIDC, read-only)
+        if: vars.PARITY_RIGHT_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.PARITY_RIGHT_ROLE_ARN }}
+          aws-region: ${{ vars.PARITY_AWS_REGION || 'us-east-1' }}
+          role-session-name: dawnfix-parity-${{ github.run_id }}
+          role-duration-seconds: 900
+          mask-aws-account-id: true
+
+      - name: Keep right credentials as a profile
+        if: vars.PARITY_RIGHT_ROLE_ARN != ''
+        env:
+          PROFILE: dawnfix-parity-right
+        run: *keep
+
+      # Exit 0 pass, 1 drift; both still send the summary. 2 config, 3 AWS, 4 read-only
+      # guard: nothing is sent and the Result step fails the job with that code.
+      - name: parity check
+        id: check
+        run: |
+          unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE
+          args=(-c .parity.yml check --left "$LEFT" --right "$RIGHT" --inventory
+                --aws-profile "$LEFT=$LEFT_PROFILE" --aws-profile "$RIGHT=$RIGHT_PROFILE"
+                --summary "$GITHUB_STEP_SUMMARY" --ingest-out "$OUT/parity-ingest.json")
+          if [ -n "$FAIL_ON" ]; then args+=(--fail-on "$FAIL_ON"); fi
+          set +e
+          parity "${args[@]}"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0) echo "parity: no drift" ;;
+            1) echo "parity: drift found; the names are in this run's job summary" ;;
+            *) echo "::error::parity exited $code (2 config, 3 AWS error, 4 read-only guard refused a call)" ;;
+          esac
+
+      - name: Send summary to the hosted service
+        if: steps.check.outputs.exit_code == '0' || steps.check.outputs.exit_code == '1'
+        env:
+          INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
+          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+        run: |
+          # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
+          need_key="Hosted Parity history (status page and weekly email) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
+          say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          doc="$OUT/parity-ingest.json"
+          if [ -z "$DAWNFIX_LICENSE" ]; then
+            say_need_key
+            exit 0
+          fi
+          case "$DAWNFIX_LICENSE" in
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+          esac
+          base="${INGEST_BASE%/}"
+          case "$base" in
+            https://*) ;;
+            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL (the workflow appends /v1/parity); nothing sent"; exit 0 ;;
+          esac
+          if ! jq -e '.schema == "dawnfix.parity/1"' "$doc" >/dev/null 2>&1; then
+            echo "::warning::$doc is not a dawnfix.parity/1 document; nothing sent"
+            exit 0
+          fi
+          echo "Sending exactly this (counts only, no names, no values):"
+          jq -c . "$doc"
+          resp="$OUT/parity-response.json"
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+            curl --silent --show-error --proto '=https' \
+              --connect-timeout 5 --max-time 15 --retry 2 --retry-max-time 30 \
+              -K - -X POST "$base/v1/parity" \
+              -H "Content-Type: application/json" \
+              -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
+              -H "X-Dawnfix-Run: $GITHUB_RUN_ID" \
+              --data-binary "@$doc" \
+              -o "$resp" -w '%{http_code}') || code="${code:-000}"
+          case "$code" in
+            201) echo "parity: HTTP 201, run recorded for the status page and the weekly email" ;;
+            200) echo "parity: HTTP 200, this run was already recorded" ;;
+            402) say_need_key "::warning::"; echo "parity: HTTP 402, this key does not cover hosted reporting for this repo" ;;
+            401) say_need_key "::warning::"; echo "parity: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_LICENSE secret" ;;
+            403) say_need_key "::warning::"; echo "parity: HTTP 403, the Enterprise key or its subscription was revoked" ;;
+            400|413|415)
+              path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")
+              echo "::warning::parity rejected the payload (HTTP $code at $path); this run is missing from the weekly email and status page" ;;
+            429) echo "::warning::parity rate limited (HTTP 429); this run is missing from the weekly email and status page" ;;
+            *) echo "::warning::parity POST failed (HTTP $code); the weekly email and status page will miss this run" ;;
+          esac
+
+      - name: Remove credential profiles
+        if: always()
+        run: rm -f "$AWS_SHARED_CREDENTIALS_FILE" "$AWS_CONFIG_FILE"
+
+      - name: Result
+        env:
+          CODE: ${{ steps.check.outputs.exit_code }}
+        run: |
+          case "$CODE" in
+            0) echo "no drift" ;;
+            1) echo "::error::config drift between $LEFT and $RIGHT: see the job summary"; exit 1 ;;
+            "") echo "::error::parity did not run"; exit 1 ;;
+            *) exit "$CODE" ;;
+          esac

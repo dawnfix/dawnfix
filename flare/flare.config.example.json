@@ -1,0 +1,11 @@
+{
+  "//": "Copy to flare.config.json. Tokens never go here: name the env vars that hold them.",
+  "tokenEnv": ["CF_TOKEN_MAIN", "CF_TOKEN_CLIENT_A"],
+  "accounts": [],
+  "repos": ["~/dev/*"],
+  "publicHostnames": ["example.com", "www.example.com", "*.tools.example.com"],
+  "appAuthScripts": ["portal"],
+  "staleDays": 180,
+  "compatMonths": 12,
+  "failOn": "high"
+}

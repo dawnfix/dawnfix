@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-fleet"
+version = "0.1.0"
+description = "Read-only, per-client account summary for agencies: alarms, spend, certificates, credential health. Free; the hosted Fleet board is Dawnfix Enterprise."
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+dependencies = [
+    "PyYAML>=6.0",
+    "boto3>=1.28",
+    "dawnfix-core",   # the read-only client guard; installed from ../../core (see Makefile)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "jsonschema>=4.18"]
+
+[project.scripts]
+fleet = "dawnfix_fleet.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "../infra/tests"]

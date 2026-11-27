@@ -1,0 +1,23 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DawnfixLeastprivReadOnly",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:GetFindingV2",
+        "access-analyzer:ListAnalyzers",
+        "access-analyzer:ListFindingsV2",
+        "iam:GenerateServiceLastAccessedDetails",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:GetRole",
+        "iam:GetRolePolicy",
+        "iam:GetServiceLastAccessedDetails",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

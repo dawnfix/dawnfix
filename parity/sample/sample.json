@@ -1,0 +1,41 @@
+{
+  "diff_text": "Dawnfix Parity: dev vs prod (11 vs 13 keys, 8 references)\n\nreferences the other environment:\n  [high]    ref:ecs:shop-prod/shop-api-prod (shop-api-prod:42)/app/REDIS  REDIS in prod references dev's arn:aws:ssm:eu-central-1:111111111111:parameter/shop/dev/DB_URL\n  [high]    ref:lambda:shop-prod-worker/CONFIG_PREFIX  CONFIG_PREFIX in prod references dev's /shop/dev/\n\nreference to missing parameter/secret:\n  [high]    ref:ecs:shop-prod/shop-api-prod (shop-api-prod:42)/app/DB_URL  DB_URL in prod references ssm /shop/prod/DB_URL_OLD, which does not exist\n  [high]    ref:lambda:shop-prod-worker/CONFIG_PREFIX  CONFIG_PREFIX in prod references ssm /shop/dev/, which does not exist\n\nliteral secret in a plain env var:\n  [high]    lambda:shop-{env}-worker/PASSWORD  PASSWORD in prod holds a literal value and its name says it is a credential: move it to Secrets Manager or an SSM SecureString and reference it (secrets.valueFrom / ARN)\n\ntype mismatch:\n  [high]    ecs:shop-api-{env}/app/STRIPE  secret-ref in dev, plain in prod\n  [high]    ssm:API_KEY  String in dev, SecureString in prod\n\nmissing in dev:\n  [medium]  ecs:shop-api-{env}/app/REDIS  missing in dev\n  [medium]  lambda:shop-{env}-worker/CONFIG_PREFIX  missing in dev\n  [medium]  lambda:shop-{env}-worker/PASSWORD  missing in dev\n  [medium]  secret:legacy  missing in dev\n  [medium]  ssm:NEW_FEATURE  missing in dev\n\nmissing in prod:\n  [medium]  ecs:shop-api-{env}/app/CONFIG_PATH  missing in prod\n  [medium]  lambda:shop-{env}-worker/QUEUE  missing in prod\n  [medium]  ssm:DEBUG_TOOLBAR  missing in prod\n\n15 finding(s) fail the check\n",
+  "ingest": {
+    "allowed": 0,
+    "failing": 15,
+    "findings": {
+      "cross_env_reference": 2,
+      "dangling_reference": 2,
+      "duplicate_key": 0,
+      "missing_in_left": 5,
+      "missing_in_right": 3,
+      "plaintext_secret": 1,
+      "type_mismatch": 2,
+      "unverifiable_reference": 0,
+      "value_differs": 0,
+      "value_shared": 0
+    },
+    "generated_at": "2026-10-27T10:00:00Z",
+    "hashed": false,
+    "inventory": {
+      "flags": {
+        "never_rotated": 3,
+        "orphaned": 5,
+        "rotation_overdue": 1,
+        "unread": 2
+      },
+      "items": 11
+    },
+    "keys": {
+      "left": 11,
+      "references": 8,
+      "right": 13
+    },
+    "pair": "2b6a2be75f6f3fd5",
+    "result": "drift",
+    "schema": "dawnfix.parity/1"
+  },
+  "inventory_text": "dev: 5 secrets/parameters, 1 flagged\n  secret Secret       shop/dev/stripe\n         changed 2026-09-27  read -  rotation off age 400d  refs 2\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app STRIPE\n           <- lambda:shop-dev-worker SECRET_ARN\n         FLAGS: unread, never_rotated  (never accessed)\n  ssm    String       /shop/dev/API_KEY\n         changed 2026-10-17  read -  rotation - age -  refs 1\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app CONFIG_PATH (prefix)\n  ssm    SecureString /shop/dev/DB_URL\n         changed 2026-10-17  read -  rotation - age 10d  refs 3\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app CONFIG_PATH (prefix)\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app DB_URL\n           <- ecs:shop-prod/shop-api-prod (shop-api-prod:42)/app REDIS [from prod]\n  ssm    String       /shop/dev/DEBUG_TOOLBAR\n         changed 2026-10-17  read -  rotation - age -  refs 1\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app CONFIG_PATH (prefix)\n  ssm    String       /shop/dev/LOG_LEVEL\n         changed 2026-10-17  read -  rotation - age -  refs 1\n           <- ecs:shop-dev/shop-api-dev (shop-api-dev:7)/app CONFIG_PATH (prefix)\n\nprod: 6 secrets/parameters, 6 flagged\n  secret Secret       shop/prod/legacy\n         changed 2026-09-27  read 2026-06-29  rotation off age 400d  refs 0\n         FLAGS: unread, never_rotated, orphaned\n  secret Secret       shop/prod/stripe\n         changed 2026-09-27  read 2026-10-26  rotation on age 200d  refs 1\n           <- lambda:shop-prod-worker SECRET_ARN\n         FLAGS: rotation_overdue  (rotation is enabled but has not run: check the rotation Lambda)\n  ssm    SecureString /shop/prod/API_KEY\n         changed 2026-10-17  read -  rotation - age 10d  refs 0\n         FLAGS: orphaned\n  ssm    SecureString /shop/prod/DB_URL\n         changed 2025-12-31  read -  rotation - age 300d  refs 0\n         FLAGS: never_rotated, orphaned\n  ssm    String       /shop/prod/LOG_LEVEL\n         changed 2026-10-17  read -  rotation - age -  refs 0\n         FLAGS: orphaned\n  ssm    String       /shop/prod/NEW_FEATURE\n         changed 2026-10-17  read -  rotation - age -  refs 0\n         FLAGS: orphaned\n",
+  "note": "Synthetic: the test suite's made-up 'shop' app in two made-up accounts (111111111111, 222222222222). No real account.",
+  "summary_markdown": "## Dawnfix Parity: `dev` vs `prod`\n\n**15 finding(s) fail the check** \u00b7 11 keys in `dev`, 13 in `prod`, 8 references\n\n| | Finding | Key | Detail |\n|---|---|---|---|\n| FAIL | references the other environment | `ref:ecs:shop-prod/shop-api-prod (shop-api-prod:42)/app/REDIS` | REDIS in prod references dev's arn:aws:ssm:eu-central-1:111111111111:parameter/shop/dev/DB_URL |\n| FAIL | references the other environment | `ref:lambda:shop-prod-worker/CONFIG_PREFIX` | CONFIG_PREFIX in prod references dev's /shop/dev/ |\n| FAIL | reference to missing parameter/secret | `ref:ecs:shop-prod/shop-api-prod (shop-api-prod:42)/app/DB_URL` | DB_URL in prod references ssm /shop/prod/DB_URL_OLD, which does not exist |\n| FAIL | reference to missing parameter/secret | `ref:lambda:shop-prod-worker/CONFIG_PREFIX` | CONFIG_PREFIX in prod references ssm /shop/dev/, which does not exist |\n| FAIL | literal secret in a plain env var | `lambda:shop-{env}-worker/PASSWORD` | PASSWORD in prod holds a literal value and its name says it is a credential: move it to Secrets Manager or an SSM SecureString and reference it (secrets.valueFrom / ARN) |\n| FAIL | type mismatch | `ecs:shop-api-{env}/app/STRIPE` | secret-ref in dev, plain in prod |\n| FAIL | type mismatch | `ssm:API_KEY` | String in dev, SecureString in prod |\n| FAIL | missing in dev | `ecs:shop-api-{env}/app/REDIS` | missing in dev |\n| FAIL | missing in dev | `lambda:shop-{env}-worker/CONFIG_PREFIX` | missing in dev |\n| FAIL | missing in dev | `lambda:shop-{env}-worker/PASSWORD` | missing in dev |\n| FAIL | missing in dev | `secret:legacy` | missing in dev |\n| FAIL | missing in dev | `ssm:NEW_FEATURE` | missing in dev |\n| FAIL | missing in prod | `ecs:shop-api-{env}/app/CONFIG_PATH` | missing in prod |\n| FAIL | missing in prod | `lambda:shop-{env}-worker/QUEUE` | missing in prod |\n| FAIL | missing in prod | `ssm:DEBUG_TOOLBAR` | missing in prod |\n\n<sub>Dawnfix Parity \u00b7 read-only \u00b7 names and metadata only</sub>\n\n## Dawnfix Parity: inventory\n\n### `dev`\n\n| Name | Type | Changed | Last read | Rotation | Referenced by | Flags |\n|---|---|---|---|---|---|---|\n| `shop/dev/stripe` | Secret | 2026-09-27 | - | off | 2 | unread, never_rotated |\n| `/shop/dev/API_KEY` | String | 2026-10-17 | - | - | 1 | - |\n| `/shop/dev/DB_URL` | SecureString | 2026-10-17 | - | - | 3 | - |\n| `/shop/dev/DEBUG_TOOLBAR` | String | 2026-10-17 | - | - | 1 | - |\n| `/shop/dev/LOG_LEVEL` | String | 2026-10-17 | - | - | 1 | - |\n\n### `prod`\n\n| Name | Type | Changed | Last read | Rotation | Referenced by | Flags |\n|---|---|---|---|---|---|---|\n| `shop/prod/legacy` | Secret | 2026-09-27 | 2026-06-29 | off | 0 | unread, never_rotated, orphaned |\n| `shop/prod/stripe` | Secret | 2026-09-27 | 2026-10-26 | on | 1 | rotation_overdue |\n| `/shop/prod/API_KEY` | SecureString | 2026-10-17 | - | - | 0 | orphaned |\n| `/shop/prod/DB_URL` | SecureString | 2025-12-31 | - | - | 0 | never_rotated, orphaned |\n| `/shop/prod/LOG_LEVEL` | String | 2026-10-17 | - | - | 0 | orphaned |\n| `/shop/prod/NEW_FEATURE` | String | 2026-10-17 | - | - | 0 | orphaned |\n\n"
+}

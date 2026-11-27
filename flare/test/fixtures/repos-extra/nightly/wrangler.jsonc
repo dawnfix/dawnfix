@@ -1,0 +1,7 @@
+// A cron-only Worker: a scheduled handler, no fetch handler, workers_dev left unset.
+{
+  "name": "nightly",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "triggers": { "crons": ["15 3 * * *"] }
+}

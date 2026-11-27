@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dawnfix.dev/schema/findings.schema.json",
+  "title": "dawnfix findings.json",
+  "description": "Written by the read job, read by the fix job. Every string is redacted and length-capped. The only text derived from log content is `error` and `sample`; both are absent when phi_mode is true.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "window", "phi_mode", "sources", "summary", "findings"],
+  "properties": {
+    "schema": { "const": "dawnfix.findings/1" },
+    "generated_at": { "$ref": "#/$defs/timestamp" },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "minutes"],
+      "properties": {
+        "start": { "$ref": "#/$defs/timestamp" },
+        "end": { "$ref": "#/$defs/timestamp" },
+        "minutes": { "type": "integer", "minimum": 1, "maximum": 10080 }
+      }
+    },
+    "phi_mode": { "type": "boolean" },
+    "sources": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "ok", "error_code", "truncated"],
+        "properties": {
+          "id": { "type": "string", "maxLength": 80, "pattern": "^(aws|gcp):[A-Za-z0-9:_.-]+$" },
+          "type": { "enum": ["aws", "gcp"] },
+          "ok": { "type": "boolean" },
+          "error_code": { "$ref": "#/$defs/code_or_null" },
+          "truncated": { "type": "boolean" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "fingerprints", "new", "spike", "known", "ignored", "truncated"],
+      "properties": {
+        "events": { "$ref": "#/$defs/count" },
+        "fingerprints": { "$ref": "#/$defs/count" },
+        "new": { "$ref": "#/$defs/count" },
+        "spike": { "$ref": "#/$defs/count" },
+        "known": { "$ref": "#/$defs/count" },
+        "ignored": { "$ref": "#/$defs/count" },
+        "truncated": { "$ref": "#/$defs/count" }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": { "$ref": "#/$defs/finding" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "phi_mode": { "const": true } } },
+      "then": {
+        "properties": {
+          "findings": {
+            "items": { "not": { "anyOf": [ { "required": ["sample"] }, { "required": ["error"] } ] } }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "timestamp": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "count": { "type": "integer", "minimum": 0 },
+    "code_or_null": {
+      "oneOf": [ { "type": "null" }, { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" } ]
+    },
+    "printable": { "type": "string", "pattern": "^[ -~]*$" },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint", "status", "severity", "source", "source_id", "kind", "service", "route",
+        "method", "http_status", "error_class", "count", "baseline", "first_seen", "last_seen",
+        "rules", "notify"
+      ],
+      "properties": {
+        "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+        "status": { "enum": ["new", "spike"] },
+        "severity": { "enum": ["critical", "high", "medium", "low"] },
+        "source": { "enum": ["aws", "gcp"] },
+        "source_id": { "type": "string", "maxLength": 80 },
+        "kind": { "enum": ["log", "alarm", "alb"] },
+        "service": { "allOf": [ { "$ref": "#/$defs/printable" }, { "maxLength": 128 } ] },
+        "route": { "type": "string", "maxLength": 200, "pattern": "^(/[A-Za-z0-9_.:-]*)*$" },
+        "method": { "enum": [null, "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"] },
+        "http_status": { "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": 100, "maximum": 599 } ] },
+        "error_class": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$" },
+        "count": { "type": "integer", "minimum": 1 },
+        "baseline": { "oneOf": [ { "type": "null" }, { "type": "number", "minimum": 0 } ] },
+        "first_seen": { "$ref": "#/$defs/timestamp" },
+        "last_seen": { "$ref": "#/$defs/timestamp" },
+        "rules": {
+          "type": "array",
+          "maxItems": 20,
+          "items": { "allOf": [ { "$ref": "#/$defs/printable" }, { "maxLength": 64 } ] }
+        },
+        "notify": { "type": "array", "maxItems": 3, "uniqueItems": true, "items": { "enum": ["email", "issue", "none"] } },
+        "error": { "allOf": [ { "$ref": "#/$defs/printable" }, { "maxLength": 160 } ] },
+        "sample": { "allOf": [ { "$ref": "#/$defs/printable" }, { "maxLength": 300 } ] }
+      }
+    }
+  }
+}

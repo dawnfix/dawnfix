@@ -1,0 +1,18 @@
+version: 1
+autonomy: diagnose          # diagnose | plan | draft-pr
+schedule: "17 * * * *"      # off the hour; GitHub delays :00 crons
+sources:
+  - aws: { role: "arn:aws:iam::123456789012:role/dawnfix-read", region: us-east-1,
+           log_groups: [my-api-prod, { name: my-worker-prod, stream_prefix: cron }],
+           alarms: true, alb: "app/my-lb/*" }
+  - gcp: { project: my-proj, filter: 'severity>=ERROR' }
+rules:
+  - name: ignore scale-in alarms
+    conditions: [ alarm ~= "AlarmLow" ]
+    actions: [ ignore ]
+  - name: payments are critical
+    conditions: [ route ^= "/payments" ]
+    actions: [ severity: critical, notify: email ]
+limits: { fix_prs_per_day: 3, max_turns: 40, timeout_minutes: 20, spike_factor: 3, spike_min_count: 10 }
+phi_mode: false
+report: { issues: github, digest: [ops@example.com] }

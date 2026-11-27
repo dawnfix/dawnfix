@@ -1,0 +1,506 @@
+{
+  "markdown": "# Teardown plan: 123456789012, cutover 2026-09-01\n\nGenerated 2026-10-27T12:00:00Z by Dawnfix Sweeper 0.1.0 (read-only). **Nothing was deleted.** Every command below is for a human to review and run.\n\n- Regions: us-east-1 \u00b7 tag filter: none\n- 22 items: 14 safe to delete, 8 to verify first\n- Estimated waste: **$264.92/month** ($117.36 delete, $147.56 verify)\n- Prices: AWS on-demand list prices for us-east-1 (AWS Price List, newest offer published 2026-10-27); estimates, not a bill.\n\n## 1. Route 53 records pointing at deleted or doomed targets\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | api.example.com. A \\(example.com.\\) `Z1/api.example.com./A` | global | points at gone-lb-999.us-east-1.elb.amazonaws.com: no such load balancer exists any more \\(dangling\\) | $0.00 | records are free; dangling ones are a subdomain-takeover risk |\n| **verify** | legacy.example.com. CNAME \\(example.com.\\) `Z1/legacy.example.com./CNAME` | global | points at legacy-clb-1.us-east-1.elb.amazonaws.com, which this plan tears down: delete the record first | $0.00 | records are free; dangling ones are a subdomain-takeover risk |\n| **verify** | old.example.com. CNAME \\(example.com.\\) `Z1/old.example.com./CNAME` | global | points at legacy-prod.us-east-1.elasticbeanstalk.com, which this plan tears down: delete the record first | $0.00 | records are free; dangling ones are a subdomain-takeover risk |\n\n## 2. ECS services at 0 desired\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | zero `arn:aws:ecs:us-east-1:123456789012:service/c1/zero` | us-east-1 | desired count is 0 | $0.00 | no running tasks; it still pins its target group and task definition |\n\n## 3. Elastic Beanstalk environments\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | legacy-prod `e-old` | us-east-1 | environment status Ready, health Grey, last updated before the cutover | $15.18 | EC2 + load balancer hourly: t3.small |\n\n## 4. Elastic Beanstalk applications\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | legacy | us-east-1 | every live environment is in this plan | $0.00 | applications are free; stored application versions in S3 are not counted |\n\n## 5. Load balancers with no healthy targets\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | old-lb `arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/old-lb/1111111111111111` | us-east-1 | none of its 1 target group\\(s\\) has a healthy target | $23.73 | application load balancer hourly charge, no LCU + 2 public IPv4 |\n\n## 6. Classic load balancers with no healthy instances\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | legacy-clb | us-east-1 | none of its 1 registered instance\\(s\\) is InService | $25.55 | classic load balancer hourly charge, no data + 2 public IPv4 |\n\n## 7. Target groups with zero registered targets\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | empty-tg `arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/empty-tg/cccccccccccccccc` | us-east-1 | zero registered targets | $0.00 | target groups are free; this is clutter that hides real config |\n\n## 8. NAT gateways with no traffic since the cutover\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | nat-idle | us-east-1 | no bytes out since the cutover; wait for the gateway to reach 'deleted' before releasing its Elastic IP | $36.50 | NAT gateway hourly charge + 1 public IPv4; data processing \\($0.045/GB\\) is zero while idle |\n\n## 9. EC2 instances stopped since before the cutover\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| **verify** | old-worker `i-stopped` | us-east-1 | t3.large stopped since 2026-08-01; vol-data survive termination \\(DeleteOnTermination is off\\): delete them after | $24.00 | EBS storage of 2 attached volume\\(s\\); a stopped instance bills no compute |\n\n## 10. RDS instances stopped or with no connections since the cutover\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| **verify** | legacy-db | us-east-1 | no connections since the cutover \\(peak DatabaseConnections 0\\); deletion protection is on: turn it off with modify-db-instance first | $64.06 | 100 GB gp3 storage, db.t3.medium postgres hours; backups and I/O not counted |\n| **verify** | stopped-db | us-east-1 | stopped; AWS starts a stopped instance again after 7 days, and compute bills again | $11.50 | 50 GB gp2 storage \\(Multi-AZ, x2\\); backups and I/O not counted |\n\n## 11. RDS manual snapshots taken before the cutover\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| **verify** | orphan-final | us-east-1 | manual snapshot of deleted-db, which no longer exists: it may be the last copy of that database \\(keep one, or export it to S3 first\\) | $47.50 | allocated size at backup storage price; billed size is smaller \\(incremental\\), so an upper bound |\n| delete | pre-migration | us-east-1 | manual snapshot of live-db taken before the cutover; live-db has newer backups | $1.90 | allocated size at backup storage price; billed size is smaller \\(incremental\\), so an upper bound |\n\n## 12. AMIs not used by any instance\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| **verify** | legacy-app-2026-05 `ami-old` | us-east-1 | AMI created before the cutover and not used by any running or stopped instance | $0.00 | AMIs are billed through their backing snapshots \\(listed separately\\) |\n\n## 13. EBS snapshots\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | snap-ami | us-east-1 | backs ami-old, which this plan deregisters | $0.20 | full snapshot size; billed size is the changed blocks, so this is an upper bound |\n| **verify** | This snapshot is created by the AWS Backup service. `snap-backup` | us-east-1 | snapshot taken before the cutover; managed by AWS Backup or Data Lifecycle Manager: change the plan/policy instead | $0.50 | source volume size; billed size is the changed blocks, so this is an upper bound |\n| delete | pre-migration backup `snap-old` | us-east-1 | snapshot taken before the cutover | $2.50 | source volume size; billed size is the changed blocks, so this is an upper bound |\n\n## 14. Unattached EBS volumes\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | old-db-data `vol-old` | us-east-1 | gp3 100 GiB volume, attached to nothing | $8.00 | gp3 storage + provisioned IOPS |\n\n## 15. Unassociated Elastic IPs\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | 52.0.0.1 `eipalloc-free` | us-east-1 | Elastic IP not associated with anything | $3.65 | public IPv4 hourly charge |\n\n## 16. Log groups with no events since the cutover\n\n| | Name | Region | Why | $/month | Basis |\n|---|---|---|---|---:|---|\n| delete | /aws/elasticbeanstalk/legacy-prod/var/log/web.stdout.log | us-east-1 | no events since 2026-08-20T00:00:00Z | $0.15 | 5.00 GB stored |\n\n## Commands (in this order)\n\nRun top to bottom. Lines marked `# VERIFY` need a human check first. Optional backups are commented out.\n\n```bash\n\n# --- 1. Route 53 records pointing at deleted or doomed targets\naws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"AliasTarget\":{\"DNSName\":\"dualstack.gone-lb-999.us-east-1.elb.amazonaws.com.\",\"EvaluateTargetHealth\":false,\"HostedZoneId\":\"Z35SXDOTRQ7X7K\"},\"Name\":\"api.example.com.\",\"Type\":\"A\"}}],\"Comment\":\"sweeper teardown\"}'\n# VERIFY: points at legacy-clb-1.us-east-1.elb.amazonaws.com, which this plan tears down: delete the record first\naws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"legacy.example.com.\",\"ResourceRecords\":[{\"Value\":\"legacy-clb-1.us-east-1.elb.amazonaws.com\"}],\"TTL\":60,\"Type\":\"CNAME\"}}],\"Comment\":\"sweeper teardown\"}'\n# VERIFY: points at legacy-prod.us-east-1.elasticbeanstalk.com, which this plan tears down: delete the record first\naws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"old.example.com.\",\"ResourceRecords\":[{\"Value\":\"legacy-prod.us-east-1.elasticbeanstalk.com\"}],\"TTL\":300,\"Type\":\"CNAME\"}}],\"Comment\":\"sweeper teardown\"}'\n\n# --- 2. ECS services at 0 desired\naws ecs delete-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/c1 --service zero --region us-east-1\n\n# --- 3. Elastic Beanstalk environments\naws elasticbeanstalk terminate-environment --environment-id e-old --region us-east-1\n\n# --- 4. Elastic Beanstalk applications\naws elasticbeanstalk delete-application --application-name legacy --region us-east-1\n\n# --- 5. Load balancers with no healthy targets\naws elbv2 delete-load-balancer --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/old-lb/1111111111111111 --region us-east-1\n\n# --- 6. Classic load balancers with no healthy instances\naws elb delete-load-balancer --load-balancer-name legacy-clb --region us-east-1\n\n# --- 7. Target groups with zero registered targets\naws elbv2 delete-target-group --target-group-arn arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/empty-tg/cccccccccccccccc --region us-east-1\n\n# --- 8. NAT gateways with no traffic since the cutover\naws ec2 delete-nat-gateway --nat-gateway-id nat-idle --region us-east-1\naws ec2 release-address --allocation-id eipalloc-nat --region us-east-1\n\n# --- 9. EC2 instances stopped since before the cutover\n# VERIFY: t3.large stopped since 2026-08-01; vol-data survive termination (DeleteOnTermination is off): delete them after\n# backup: aws ec2 create-image --instance-id i-stopped --name pre-teardown-i-stopped --no-reboot --region us-east-1\naws ec2 terminate-instances --instance-ids i-stopped --region us-east-1\n\n# --- 10. RDS instances stopped or with no connections since the cutover\n# VERIFY: no connections since the cutover (peak DatabaseConnections 0); deletion protection is on: turn it off with modify-db-instance first\naws rds delete-db-instance --db-instance-identifier legacy-db --final-db-snapshot-identifier legacy-db-final-20261027 --region us-east-1\n# VERIFY: stopped; AWS starts a stopped instance again after 7 days, and compute bills again\naws rds delete-db-instance --db-instance-identifier stopped-db --final-db-snapshot-identifier stopped-db-final-20261027 --region us-east-1\n\n# --- 11. RDS manual snapshots taken before the cutover\n# VERIFY: manual snapshot of deleted-db, which no longer exists: it may be the last copy of that database (keep one, or export it to S3 first)\naws rds delete-db-snapshot --db-snapshot-identifier orphan-final --region us-east-1\naws rds delete-db-snapshot --db-snapshot-identifier pre-migration --region us-east-1\n\n# --- 12. AMIs not used by any instance\n# VERIFY: AMI created before the cutover and not used by any running or stopped instance\naws ec2 deregister-image --image-id ami-old --region us-east-1\n\n# --- 13. EBS snapshots\naws ec2 delete-snapshot --snapshot-id snap-ami --region us-east-1\n# VERIFY: snapshot taken before the cutover; managed by AWS Backup or Data Lifecycle Manager: change the plan/policy instead\naws ec2 delete-snapshot --snapshot-id snap-backup --region us-east-1\naws ec2 delete-snapshot --snapshot-id snap-old --region us-east-1\n\n# --- 14. Unattached EBS volumes\n# backup: aws ec2 create-snapshot --volume-id vol-old --description 'pre-teardown copy of vol-old' --region us-east-1\naws ec2 delete-volume --volume-id vol-old --region us-east-1\n\n# --- 15. Unassociated Elastic IPs\naws ec2 release-address --allocation-id eipalloc-free --region us-east-1\n\n# --- 16. Log groups with no events since the cutover\naws logs delete-log-group --log-group-name /aws/elasticbeanstalk/legacy-prod/var/log/web.stdout.log --region us-east-1\n```\n\n## Notes\n\n- 1 Aurora cluster member\\(s\\) in us-east-1 were not checked \\(clusters are not covered yet\\).\n- 1 Route 53 record\\(s\\) point at load balancers or Beanstalk environments in regions that were not scanned; pass those regions with --region to check them.\n- A/AAAA records with plain IPs were not checked; pass --ip-ranges ip-ranges.json \\(https://ip-ranges.amazonaws.com/ip-ranges.json\\) to flag IPs in AWS EC2 space that this account no longer owns.\n\n## Price sources\n\n- https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSELB/current/&lt;region&gt;/index.csv\n- https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/&lt;region&gt;/index.csv\n- https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/&lt;region&gt;/index.csv\n- https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/&lt;region&gt;/index.csv\n- https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/&lt;region&gt;/index.csv\n\n_On-demand list prices from the AWS Price List bulk API \\(offer files named under source.offers, publication dates there\\); the tool never fetches prices live. Estimates only: no Savings Plans, reserved capacity, credits, free tier, LCU or data charges. Still estimated by rule, not by a price: Multi-AZ RDS is counted as twice Single-AZ, snapshot sizes are upper bounds, and a region missing here is priced at us-east-1._\n\nDawnfix Sweeper \u00b7 Source available under FSL-1.1-ALv2 \u00b7 https://dawnfix.dev/sweeper\n",
+  "note": "Synthetic: the test suite's made-up account 123456789012 and example.com zone. No real account.",
+  "plan": {
+    "account": "123456789012",
+    "before_date": "2026-09-01",
+    "errors": [],
+    "executed": false,
+    "generated_at": "2026-10-27T12:00:00Z",
+    "items": [
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"AliasTarget\":{\"DNSName\":\"dualstack.gone-lb-999.us-east-1.elb.amazonaws.com.\",\"EvaluateTargetHealth\":false,\"HostedZoneId\":\"Z35SXDOTRQ7X7K\"},\"Name\":\"api.example.com.\",\"Type\":\"A\"}}],\"Comment\":\"sweeper teardown\"}'"
+        ],
+        "cost_note": "records are free; dangling ones are a subdomain-takeover risk",
+        "created": null,
+        "depends_on": [],
+        "id": "Z1/api.example.com./A",
+        "kind": "route53_record",
+        "monthly_usd": 0.0,
+        "name": "api.example.com. A (example.com.)",
+        "phase": 1,
+        "reason": "points at gone-lb-999.us-east-1.elb.amazonaws.com: no such load balancer exists any more (dangling)",
+        "region": "global",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"legacy.example.com.\",\"ResourceRecords\":[{\"Value\":\"legacy-clb-1.us-east-1.elb.amazonaws.com\"}],\"TTL\":60,\"Type\":\"CNAME\"}}],\"Comment\":\"sweeper teardown\"}'"
+        ],
+        "cost_note": "records are free; dangling ones are a subdomain-takeover risk",
+        "created": null,
+        "depends_on": [
+          "legacy-clb"
+        ],
+        "id": "Z1/legacy.example.com./CNAME",
+        "kind": "route53_record",
+        "monthly_usd": 0.0,
+        "name": "legacy.example.com. CNAME (example.com.)",
+        "phase": 1,
+        "reason": "points at legacy-clb-1.us-east-1.elb.amazonaws.com, which this plan tears down: delete the record first",
+        "region": "global",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws route53 change-resource-record-sets --hosted-zone-id Z1 --change-batch '{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"old.example.com.\",\"ResourceRecords\":[{\"Value\":\"legacy-prod.us-east-1.elasticbeanstalk.com\"}],\"TTL\":300,\"Type\":\"CNAME\"}}],\"Comment\":\"sweeper teardown\"}'"
+        ],
+        "cost_note": "records are free; dangling ones are a subdomain-takeover risk",
+        "created": null,
+        "depends_on": [
+          "e-old"
+        ],
+        "id": "Z1/old.example.com./CNAME",
+        "kind": "route53_record",
+        "monthly_usd": 0.0,
+        "name": "old.example.com. CNAME (example.com.)",
+        "phase": 1,
+        "reason": "points at legacy-prod.us-east-1.elasticbeanstalk.com, which this plan tears down: delete the record first",
+        "region": "global",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws ecs delete-service --cluster arn:aws:ecs:us-east-1:123456789012:cluster/c1 --service zero --region us-east-1"
+        ],
+        "cost_note": "no running tasks; it still pins its target group and task definition",
+        "created": "2026-04-01T00:00:00Z",
+        "depends_on": [],
+        "id": "arn:aws:ecs:us-east-1:123456789012:service/c1/zero",
+        "kind": "ecs_service",
+        "monthly_usd": 0.0,
+        "name": "zero",
+        "phase": 2,
+        "reason": "desired count is 0",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws elasticbeanstalk terminate-environment --environment-id e-old --region us-east-1"
+        ],
+        "cost_note": "EC2 + load balancer hourly: t3.small",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "e-old",
+        "kind": "eb_environment",
+        "monthly_usd": 15.18,
+        "name": "legacy-prod",
+        "phase": 3,
+        "reason": "environment status Ready, health Grey, last updated before the cutover",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws elasticbeanstalk delete-application --application-name legacy --region us-east-1"
+        ],
+        "cost_note": "applications are free; stored application versions in S3 are not counted",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [
+          "e-old"
+        ],
+        "id": "legacy",
+        "kind": "eb_application",
+        "monthly_usd": 0.0,
+        "name": "legacy",
+        "phase": 4,
+        "reason": "every live environment is in this plan",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws elbv2 delete-load-balancer --load-balancer-arn arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/old-lb/1111111111111111 --region us-east-1"
+        ],
+        "cost_note": "application load balancer hourly charge, no LCU + 2 public IPv4",
+        "created": "2026-03-01T00:00:00Z",
+        "depends_on": [],
+        "id": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/old-lb/1111111111111111",
+        "kind": "load_balancer",
+        "monthly_usd": 23.73,
+        "name": "old-lb",
+        "phase": 5,
+        "reason": "none of its 1 target group(s) has a healthy target",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws elb delete-load-balancer --load-balancer-name legacy-clb --region us-east-1"
+        ],
+        "cost_note": "classic load balancer hourly charge, no data + 2 public IPv4",
+        "created": "2024-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "legacy-clb",
+        "kind": "classic_elb",
+        "monthly_usd": 25.55,
+        "name": "legacy-clb",
+        "phase": 6,
+        "reason": "none of its 1 registered instance(s) is InService",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws elbv2 delete-target-group --target-group-arn arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/empty-tg/cccccccccccccccc --region us-east-1"
+        ],
+        "cost_note": "target groups are free; this is clutter that hides real config",
+        "created": null,
+        "depends_on": [],
+        "id": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/empty-tg/cccccccccccccccc",
+        "kind": "target_group",
+        "monthly_usd": 0.0,
+        "name": "empty-tg",
+        "phase": 7,
+        "reason": "zero registered targets",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 delete-nat-gateway --nat-gateway-id nat-idle --region us-east-1",
+          "aws ec2 release-address --allocation-id eipalloc-nat --region us-east-1"
+        ],
+        "cost_note": "NAT gateway hourly charge + 1 public IPv4; data processing ($0.045/GB) is zero while idle",
+        "created": "2026-03-01T00:00:00Z",
+        "depends_on": [],
+        "id": "nat-idle",
+        "kind": "nat_gateway",
+        "monthly_usd": 36.5,
+        "name": "nat-idle",
+        "phase": 8,
+        "reason": "no bytes out since the cutover; wait for the gateway to reach `deleted` before releasing its Elastic IP",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [
+          "aws ec2 create-image --instance-id i-stopped --name pre-teardown-i-stopped --no-reboot --region us-east-1"
+        ],
+        "commands": [
+          "aws ec2 terminate-instances --instance-ids i-stopped --region us-east-1"
+        ],
+        "cost_note": "EBS storage of 2 attached volume(s); a stopped instance bills no compute",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "i-stopped",
+        "kind": "ec2_instance",
+        "monthly_usd": 24.0,
+        "name": "old-worker",
+        "phase": 9,
+        "reason": "t3.large stopped since 2026-08-01; vol-data survive termination (DeleteOnTermination is off): delete them after",
+        "region": "us-east-1",
+        "tags": {
+          "Name": "old-worker"
+        }
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws rds delete-db-instance --db-instance-identifier legacy-db --final-db-snapshot-identifier legacy-db-final-20261027 --region us-east-1"
+        ],
+        "cost_note": "100 GB gp3 storage, db.t3.medium postgres hours; backups and I/O not counted",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "legacy-db",
+        "kind": "rds_instance",
+        "monthly_usd": 64.06,
+        "name": "legacy-db",
+        "phase": 10,
+        "reason": "no connections since the cutover (peak DatabaseConnections 0); deletion protection is on: turn it off with modify-db-instance first",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws rds delete-db-instance --db-instance-identifier stopped-db --final-db-snapshot-identifier stopped-db-final-20261027 --region us-east-1"
+        ],
+        "cost_note": "50 GB gp2 storage (Multi-AZ, x2); backups and I/O not counted",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "stopped-db",
+        "kind": "rds_instance",
+        "monthly_usd": 11.5,
+        "name": "stopped-db",
+        "phase": 10,
+        "reason": "stopped; AWS starts a stopped instance again after 7 days, and compute bills again",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws rds delete-db-snapshot --db-snapshot-identifier orphan-final --region us-east-1"
+        ],
+        "cost_note": "allocated size at backup storage price; billed size is smaller (incremental), so an upper bound",
+        "created": "2026-05-01T00:00:00Z",
+        "depends_on": [],
+        "id": "orphan-final",
+        "kind": "rds_snapshot",
+        "monthly_usd": 47.5,
+        "name": "orphan-final",
+        "phase": 11,
+        "reason": "manual snapshot of deleted-db, which no longer exists: it may be the last copy of that database (keep one, or export it to S3 first)",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws rds delete-db-snapshot --db-snapshot-identifier pre-migration --region us-east-1"
+        ],
+        "cost_note": "allocated size at backup storage price; billed size is smaller (incremental), so an upper bound",
+        "created": "2026-08-15T00:00:00Z",
+        "depends_on": [],
+        "id": "pre-migration",
+        "kind": "rds_snapshot",
+        "monthly_usd": 1.9,
+        "name": "pre-migration",
+        "phase": 11,
+        "reason": "manual snapshot of live-db taken before the cutover; live-db has newer backups",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 deregister-image --image-id ami-old --region us-east-1"
+        ],
+        "cost_note": "AMIs are billed through their backing snapshots (listed separately)",
+        "created": "2026-05-01T00:00:00Z",
+        "depends_on": [],
+        "id": "ami-old",
+        "kind": "ami",
+        "monthly_usd": 0.0,
+        "name": "legacy-app-2026-05",
+        "phase": 12,
+        "reason": "AMI created before the cutover and not used by any running or stopped instance",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 delete-snapshot --snapshot-id snap-ami --region us-east-1"
+        ],
+        "cost_note": "full snapshot size; billed size is the changed blocks, so this is an upper bound",
+        "created": "2026-05-01T00:00:00Z",
+        "depends_on": [
+          "ami-old"
+        ],
+        "id": "snap-ami",
+        "kind": "snapshot",
+        "monthly_usd": 0.2,
+        "name": "snap-ami",
+        "phase": 13,
+        "reason": "backs ami-old, which this plan deregisters",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "verify",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 delete-snapshot --snapshot-id snap-backup --region us-east-1"
+        ],
+        "cost_note": "source volume size; billed size is the changed blocks, so this is an upper bound",
+        "created": "2026-03-01T00:00:00Z",
+        "depends_on": [],
+        "id": "snap-backup",
+        "kind": "snapshot",
+        "monthly_usd": 0.5,
+        "name": "This snapshot is created by the AWS Backup service.",
+        "phase": 13,
+        "reason": "snapshot taken before the cutover; managed by AWS Backup or Data Lifecycle Manager: change the plan/policy instead",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 delete-snapshot --snapshot-id snap-old --region us-east-1"
+        ],
+        "cost_note": "source volume size; billed size is the changed blocks, so this is an upper bound",
+        "created": "2026-04-01T00:00:00Z",
+        "depends_on": [],
+        "id": "snap-old",
+        "kind": "snapshot",
+        "monthly_usd": 2.5,
+        "name": "pre-migration backup",
+        "phase": 13,
+        "reason": "snapshot taken before the cutover",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [
+          "aws ec2 create-snapshot --volume-id vol-old --description 'pre-teardown copy of vol-old' --region us-east-1"
+        ],
+        "commands": [
+          "aws ec2 delete-volume --volume-id vol-old --region us-east-1"
+        ],
+        "cost_note": "gp3 storage + provisioned IOPS",
+        "created": "2026-06-01T00:00:00Z",
+        "depends_on": [],
+        "id": "vol-old",
+        "kind": "ebs_volume",
+        "monthly_usd": 8.0,
+        "name": "old-db-data",
+        "phase": 14,
+        "reason": "gp3 100 GiB volume, attached to nothing",
+        "region": "us-east-1",
+        "tags": {
+          "Name": "old-db-data"
+        }
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws ec2 release-address --allocation-id eipalloc-free --region us-east-1"
+        ],
+        "cost_note": "public IPv4 hourly charge",
+        "created": null,
+        "depends_on": [],
+        "id": "eipalloc-free",
+        "kind": "elastic_ip",
+        "monthly_usd": 3.65,
+        "name": "52.0.0.1",
+        "phase": 15,
+        "reason": "Elastic IP not associated with anything",
+        "region": "us-east-1",
+        "tags": {}
+      },
+      {
+        "action": "delete",
+        "backup_commands": [],
+        "commands": [
+          "aws logs delete-log-group --log-group-name /aws/elasticbeanstalk/legacy-prod/var/log/web.stdout.log --region us-east-1"
+        ],
+        "cost_note": "5.00 GB stored",
+        "created": "2025-01-01T00:00:00Z",
+        "depends_on": [],
+        "id": "/aws/elasticbeanstalk/legacy-prod/var/log/web.stdout.log",
+        "kind": "log_group",
+        "monthly_usd": 0.15,
+        "name": "/aws/elasticbeanstalk/legacy-prod/var/log/web.stdout.log",
+        "phase": 16,
+        "reason": "no events since 2026-08-20T00:00:00Z",
+        "region": "us-east-1",
+        "tags": {}
+      }
+    ],
+    "notes": [
+      "1 Aurora cluster member(s) in us-east-1 were not checked (clusters are not covered yet).",
+      "1 Route 53 record(s) point at load balancers or Beanstalk environments in regions that were not scanned; pass those regions with --region to check them.",
+      "A/AAAA records with plain IPs were not checked; pass --ip-ranges ip-ranges.json (https://ip-ranges.amazonaws.com/ip-ranges.json) to flag IPs in AWS EC2 space that this account no longer owns."
+    ],
+    "pitch": {
+      "line": "You're paying about $265/month for leftovers. Dawnfix Receipt catches the next one at deploy time: every deploy gets a comment with what it did to the AWS bill, from your own CI. Free: templates/github/workflows/dawnfix-receipt.yml in the Dawnfix repo.",
+      "url": "https://dawnfix.dev/receipt"
+    },
+    "price_table": {
+      "as_of": "2026-10-27",
+      "default_region": "us-east-1",
+      "estimated": [],
+      "note": "On-demand list prices from the AWS Price List bulk API (offer files named under source.offers, publication dates there); the tool never fetches prices live. Estimates only: no Savings Plans, reserved capacity, credits, free tier, LCU or data charges. Still estimated by rule, not by a price: Multi-AZ RDS is counted as twice Single-AZ, snapshot sizes are upper bounds, and a region missing here is priced at us-east-1.",
+      "publication_dates": {
+        "AWSELB": "2026-09-11",
+        "AmazonCloudWatch": "2026-10-07",
+        "AmazonEC2": "2026-10-27",
+        "AmazonRDS": "2026-10-26",
+        "AmazonVPC": "2026-10-16"
+      },
+      "regions": [
+        "us-east-1",
+        "us-east-2",
+        "us-west-1",
+        "us-west-2",
+        "ca-central-1",
+        "eu-central-1",
+        "eu-west-1",
+        "eu-west-2",
+        "eu-west-3",
+        "eu-north-1",
+        "eu-south-1",
+        "ap-south-1",
+        "ap-southeast-1",
+        "ap-southeast-2",
+        "ap-northeast-1",
+        "ap-northeast-2",
+        "sa-east-1"
+      ],
+      "sources": [
+        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AWSELB/current/<region>/index.csv",
+        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/<region>/index.csv",
+        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/current/<region>/index.csv",
+        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonRDS/current/<region>/index.csv",
+        "https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonVPC/current/<region>/index.csv"
+      ]
+    },
+    "regions": [
+      "us-east-1"
+    ],
+    "summary": {
+      "by_kind": {
+        "ami": 1,
+        "classic_elb": 1,
+        "eb_application": 1,
+        "eb_environment": 1,
+        "ebs_volume": 1,
+        "ec2_instance": 1,
+        "ecs_service": 1,
+        "elastic_ip": 1,
+        "load_balancer": 1,
+        "log_group": 1,
+        "nat_gateway": 1,
+        "rds_instance": 2,
+        "rds_snapshot": 2,
+        "route53_record": 3,
+        "snapshot": 3,
+        "target_group": 1
+      },
+      "delete": 14,
+      "items": 22,
+      "monthly_usd_delete": 117.36,
+      "monthly_usd_total": 264.92,
+      "monthly_usd_verify": 147.56,
+      "verify": 8
+    },
+    "tag_filter": {},
+    "tool": "sweeper",
+    "version": "0.1.0"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "//": "Proves src/core runs without Node: no node types, so an fs/path/process import fails here. This is the part a Worker on a cron would import.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": [], "noEmit": true },
+  "include": ["src/core/**/*.ts", "examples/worker-cron.ts"]
+}

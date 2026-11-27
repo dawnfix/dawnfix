@@ -1,0 +1,369 @@
+{
+ "html": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><meta name=\"color-scheme\" content=\"light dark\"><title>Sample: Logbill report</title><style>\n:root{--bg:#fbfaf7;--fg:#1d1b18;--muted:#6b665e;--line:#e6e1d8;--card:#ffffff;--accent:#c8501e;\n--accent-soft:#f6e3d8;--good:#2f7a4a;--good-soft:#e1f1e6;--code:#f3f0ea;--bar:#e8a57f}\n@media (prefers-color-scheme:dark){:root{--bg:#141311;--fg:#ece8e1;--muted:#a39d93;--line:#2c2a26;\n--card:#1c1b18;--accent:#f08a5a;--accent-soft:#3a2419;--good:#7fcf9b;--good-soft:#1b3123;--code:#24221e;--bar:#a5532c}}\n*{box-sizing:border-box}\nhtml{-webkit-text-size-adjust:100%}\nbody{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,\"Segoe UI\",\nRoboto,\"Helvetica Neue\",Arial,sans-serif}\nmain{max-width:980px;margin:0 auto;padding:28px 16px 48px}\n.eyebrow{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);font-weight:600}\nh1{font-size:clamp(24px,5vw,34px);line-height:1.15;margin:6px 0 8px;letter-spacing:-.01em}\nh1 .save{color:var(--good)}\nh2{font-size:18px;margin:36px 0 10px}\n.meta{color:var(--muted);font-size:13px}\n.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:22px 0 4px}\n.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}\n.kpi b{display:block;font-size:22px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}\n.kpi span{color:var(--muted);font-size:12px}\n.kpi.good b{color:var(--good)}\n@media (max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}}\nol.sugg{list-style:none;margin:0;padding:0;display:grid;gap:8px}\nol.sugg li{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;\ndisplay:grid;grid-template-columns:1fr auto;gap:2px 14px}\nol.sugg .amt{grid-row:1/span 3;grid-column:2;align-self:start;font-weight:700;color:var(--good);\nbackground:var(--good-soft);border-radius:6px;padding:2px 8px;font-variant-numeric:tabular-nums;white-space:nowrap}\nol.sugg .t{font-weight:600}\nol.sugg .g,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;overflow-wrap:anywhere}\nol.sugg .g{color:var(--muted)}\nol.sugg .d{font-size:13.5px;grid-column:1/span 2}\npre{background:var(--code);border-radius:6px;padding:8px 10px;margin:6px 0 0;font-size:12px;white-space:pre-wrap;\noverflow-wrap:anywhere;grid-column:1/span 2}\n.scroll{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--card)}\ntable{border-collapse:collapse;width:100%;font-size:13.5px}\nth,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}\nth{font-size:12px;color:var(--muted);font-weight:600;white-space:nowrap}\ntr:last-child td{border-bottom:0}\ntd.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}\ntd.name{min-width:180px;max-width:360px}\n.bar{height:4px;border-radius:2px;background:var(--bar);margin-top:4px}\n.chip{display:inline-block;font-size:11px;border-radius:999px;padding:1px 8px;margin:2px 4px 0 0;\nbackground:var(--accent-soft);color:var(--accent);font-weight:600}\n.warn{color:var(--accent);font-weight:600}\n.empty{color:var(--muted);background:var(--card);border:1px dashed var(--line);border-radius:10px;padding:14px}\ndetails{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px}\ndetails summary{cursor:pointer;font-weight:600}\ndetails ul{padding-left:18px;margin:8px 0 0;font-size:13.5px}\nfooter{margin-top:40px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:13px}\nfooter b{color:var(--fg)}\n</style></head><body><main><p class=\"empty\" role=\"note\"><b>Sample report.</b> Synthetic data from Logbill's test scenario: made-up log groups in the AWS documentation account id 123456789012, not a real account. Run it on yours: dawnfix.dev/logbill</p><div class=\"eyebrow\">Dawnfix Logbill &middot; CloudWatch Logs bill X-ray</div><h1>Your CloudWatch Logs bill is about $60.18 a month. <span class=\"save\">$50.55 of it can go.</span></h1><div class=\"meta\">Account 123456789012 &middot; us-east-1 &middot; last 30 days, projected to 30 &middot; generated 2026-10-27 10:00 UTC &middot; Before the AWS free tier (5 GB/month, worth at most $2.50).</div><div class=\"kpis\"><div class=\"kpi\"><b>$60.18</b><span>per month, 3 log groups</span></div><div class=\"kpi good\"><b>$50.55</b><span>per month in savings found</span></div><div class=\"kpi\"><b>90.0 GB</b><span>ingested per month ($45.00)</span></div><div class=\"kpi\"><b>1</b><span>groups that never expire (506 GB stored)</span></div></div><h2>Biggest savings</h2><ol class=\"sugg\"><li><span class=\"t\">Drop or sample a noisy log line</span><span class=\"amt\">$18.05/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">About 60% of this group&#x27;s bytes (50% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.</span></li><li><span class=\"t\">DEBUG-level lines in what looks like prod</span><span class=\"amt\">$18.05/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">Raise the log level to INFO in production (`logbill locate` finds the lines).</span></li><li><span class=\"t\">Move to the Infrequent Access log class</span><span class=\"amt\">$15.00/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">No metric or subscription filters; recent Insights queries: 0. The class is fixed at creation: create a new group in Infrequent Access and point the writer at it. You lose Live Tail and filters; Insights still works.</span></li><li><span class=\"t\">Set 30-day retention (never expires today)</span><span class=\"amt\">$14.55/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">Stores 500.0 GB with no expiry. At 30 days about 15.0 GB would remain.</span><pre>aws logs put-retention-policy --region us-east-1 --log-group-name /ecs/api-prod --retention-in-days 30</pre></li><li><span class=\"t\">Set 90-day retention (never expires today)</span><span class=\"amt\">$13.65/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">Stores 500.0 GB with no expiry. At 90 days about 45.0 GB would remain.</span><pre>aws logs put-retention-policy --region us-east-1 --log-group-name /ecs/api-prod --retention-in-days 90</pre></li><li><span class=\"t\">Lambda START/END/REPORT lines</span><span class=\"amt\">$9.00/mo</span><span class=\"g\">us-east-1 &middot; /aws/lambda/checkout-prod</span><span class=\"d\">Platform lines on every invocation. JSON log format with system log level WARN drops them (Duration and memory stay in AWS/Lambda metrics). JSON format also reshapes your own log lines: check parsers and metric filters first.</span><pre>aws lambda update-function-configuration --region us-east-1 --function-name checkout-prod --logging-config LogFormat=JSON,SystemLogLevel=WARN</pre></li><li><span class=\"t\">Drop or sample a noisy log line</span><span class=\"amt\">$4.49/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">About 15% of this group&#x27;s bytes (20% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.</span></li><li><span class=\"t\">Drop or sample a noisy log line</span><span class=\"amt\">$1.46/mo</span><span class=\"g\">us-east-1 &middot; /ecs/api-prod</span><span class=\"d\">About 5% of this group&#x27;s bytes (10% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.</span></li></ol><p class=\"meta\">Amounts overlap (retention at 30 and 90 days, dropping a line and moving its group to Infrequent Access); the headline total counts each dollar once.</p><h2>Costliest log groups</h2><div class=\"scroll\"><table><thead><tr><th>Log group</th><th>Class</th><th>Retention</th><th class=\"n\">Ingested/mo</th><th class=\"n\">Stored</th><th class=\"n\">Filters</th><th class=\"n\">$/mo</th></tr></thead><tbody><tr><td class=\"name\"><div class=\"mono\">/ecs/api-prod</div><div class=\"meta\">us-east-1</div><div class=\"bar\" style=\"width:100%\"></div></td><td>Standard</td><td><span class=\"warn\">never expires</span></td><td class=\"n\">60.0 GB</td><td class=\"n\">500 GB</td><td class=\"n\" title=\"metric / subscription\">0 / 0</td><td class=\"n\"><b>$45.00</b></td></tr><tr><td class=\"name\"><div class=\"mono\">/aws/lambda/checkout-prod</div><div class=\"meta\">us-east-1 &middot; vended</div><div class=\"bar\" style=\"width:34%\"></div></td><td>Standard</td><td>14 days</td><td class=\"n\">30.0 GB</td><td class=\"n\">5.0 GB</td><td class=\"n\" title=\"metric / subscription\">1 / 0</td><td class=\"n\"><b>$15.15</b></td></tr><tr><td class=\"name\"><div class=\"mono\">/app/kept-staging</div><div class=\"meta\">us-east-1</div><div class=\"bar\" style=\"width:2%\"></div></td><td>Standard</td><td>30 days</td><td class=\"n\">0 MB</td><td class=\"n\">1.0 GB</td><td class=\"n\" title=\"metric / subscription\">0 / 0</td><td class=\"n\"><b>$0.03</b></td></tr></tbody></table></div><h2>Costliest log lines</h2><div class=\"scroll\"><table><thead><tr><th>Pattern (redacted)</th><th class=\"n\">Share</th><th class=\"n\">$/mo</th></tr></thead><tbody><tr><td class=\"name\"><div class=\"mono\">{&quot;level&quot;:&quot;debug&quot;,&quot;msg&quot;:&quot;cache lookup for order &lt;Number-1&gt; took &lt;Number-2&gt; ms&quot;}</div><div class=\"meta\">/ecs/api-prod &middot; id 59821845c267</div><span class=\"chip\">DEBUG in prod</span><span class=\"chip\">noisy</span></td><td class=\"n\">60%</td><td class=\"n\"><b>$18.05</b></td></tr><tr><td class=\"name\"><div class=\"mono\">REPORT RequestId: &lt;UUID-1&gt; Duration: &lt;Number-2&gt; ms Billed Duration: &lt;Number-3&gt; ms</div><div class=\"meta\">/aws/lambda/checkout-prod &middot; id d6655ed952ca</div><span class=\"chip\">Lambda platform</span></td><td class=\"n\">39%</td><td class=\"n\"><b>$5.82</b></td></tr><tr><td class=\"name\"><div class=\"mono\">order accepted, sending confirmation to :email</div><div class=\"meta\">/ecs/api-prod &middot; id 2203dc1c7035</div><span class=\"chip\">noisy</span></td><td class=\"n\">15%</td><td class=\"n\"><b>$4.49</b></td></tr><tr><td class=\"name\"><div class=\"mono\">START RequestId: &lt;UUID-1&gt; Version: $LATEST</div><div class=\"meta\">/aws/lambda/checkout-prod &middot; id 07a418f72992</div><span class=\"chip\">Lambda platform</span></td><td class=\"n\">21%</td><td class=\"n\"><b>$3.18</b></td></tr><tr><td class=\"name\"><div class=\"mono\">GET /health 200 in &lt;Number-1&gt; ms</div><div class=\"meta\">/ecs/api-prod &middot; id cd377624ef4a</div><span class=\"chip\">noisy</span></td><td class=\"n\">5%</td><td class=\"n\"><b>$1.46</b></td></tr></tbody></table></div><p class=\"meta\">Map these to source lines: <span class=\"mono\">logbill locate --repo PATH --report &lt;this report&gt;.json</span></p><h2>What this report cost</h2><p>Logs Insights scanned 3.0 GB for about $0.01 (budget 5 GB, planned 3.0 GB). Everything else was metadata and metrics.</p><h2>How the numbers were made</h2><details><summary>Prices, assumptions and notes</summary><ul><li>Prices: AWS Price List for CloudWatch, published 2026-10-07, read 2026-10-27. Edit <span class=\"mono\">prices.json</span> to change them.</li><li>Ingestion: AWS/Logs IncomingBytes per log group over 30 days, scaled to 30.</li><li>Storage: storedBytes from DescribeLogGroups at the region's GB-month rate. Retention savings assume the stored bytes built up evenly since the group was created.</li><li>Per-line cost: Logs Insights <span class=\"mono\">pattern</span> counts over a short window, weighted by line length, applied to the group's monthly ingestion cost.</li><li>Vended logs (Lambda, /aws/vendedlogs/) are priced on the region's volume tiers.</li></ul></details><footer><p><b>Dawnfix</b>: Dawnfix watches these same logs for new errors and opens a draft PR with a failing test and the fix, from your own GitHub Actions. Free and source available. Hosted status page and email alerts: Dawnfix Enterprise. dawnfix.dev/docs/setup</p><p>Made on your machine with your own AWS credentials. Nothing was uploaded. Dawnfix Logbill. Source available under FSL-1.1-ALv2.</p></footer></main></body></html>",
+ "locate": [
+  {
+   "candidates": [
+    {
+     "file": "src/api/orders.py",
+     "line": 7,
+     "text": "log.debug(\"cache lookup for order %s took %d ms\", order.id, order.ms)"
+    }
+   ],
+   "group": "/ecs/api-prod",
+   "monthly_usd": 18.04878048780488,
+   "text": "{\"level\":\"debug\",\"msg\":\"cache lookup for order <Number-1> took <Number-2> ms\"}"
+  },
+  {
+   "candidates": [],
+   "group": "/aws/lambda/checkout-prod",
+   "monthly_usd": 5.823529411764706,
+   "text": "REPORT RequestId: <UUID-1> Duration: <Number-2> ms Billed Duration: <Number-3> ms"
+  },
+  {
+   "candidates": [
+    {
+     "file": "src/api/orders.py",
+     "line": 9,
+     "text": "log.info(\"order accepted, sending confirmation to %s\", order.email)"
+    }
+   ],
+   "group": "/ecs/api-prod",
+   "monthly_usd": 4.487804878048781,
+   "text": "order accepted, sending confirmation to :email"
+  },
+  {
+   "candidates": [],
+   "group": "/aws/lambda/checkout-prod",
+   "monthly_usd": 3.176470588235294,
+   "text": "START RequestId: <UUID-1> Version: $LATEST"
+  },
+  {
+   "candidates": [],
+   "group": "/ecs/api-prod",
+   "monthly_usd": 1.4634146341463414,
+   "text": "GET /health 200 in <Number-1> ms"
+  }
+ ],
+ "note": "Generated by logbill/sample/make_sample.py from tests/scenario.py and tests/fixtures/repo. Synthetic data. Do not edit by hand.",
+ "report": {
+  "account": "123456789012",
+  "days": 30,
+  "errors": [],
+  "generated_at": "2026-10-27T10:00:00+00:00",
+  "groups": [
+   {
+    "approx_price": false,
+    "created_ms": 1706695200000,
+    "days": 30,
+    "ingest_usd": 30.0,
+    "ingested_bytes": 64424509440.0,
+    "ingested_events": 30000000.0,
+    "insights": {
+     "bytes_scanned": 1610612736.0,
+     "est_bytes": 2147483648.0,
+     "status": "Complete",
+     "window_hours": 24.0
+    },
+    "last_day_bytes": 2147483648,
+    "log_class": "STANDARD",
+    "metric_filters": 0,
+    "monthly_ingest_gb": 60.0,
+    "monthly_usd": 45.0,
+    "name": "/ecs/api-prod",
+    "never_expires": true,
+    "patterns": [
+     {
+      "byte_share": 0.6016260162601627,
+      "count": 5000,
+      "flags": [
+       "debug_in_prod",
+       "noisy"
+      ],
+      "id": "59821845c267",
+      "monthly_usd": 18.04878048780488,
+      "ratio": 0.5,
+      "severity": "Debug",
+      "text": "{\"level\":\"debug\",\"msg\":\"cache lookup for order <Number-1> took <Number-2> ms\"}"
+     },
+     {
+      "byte_share": 0.14959349593495935,
+      "count": 2000,
+      "flags": [
+       "noisy"
+      ],
+      "id": "2203dc1c7035",
+      "monthly_usd": 4.487804878048781,
+      "ratio": 0.2,
+      "severity": "Info",
+      "text": "order accepted, sending confirmation to :email"
+     },
+     {
+      "byte_share": 0.04878048780487805,
+      "count": 1000,
+      "flags": [
+       "noisy"
+      ],
+      "id": "cd377624ef4a",
+      "monthly_usd": 1.4634146341463414,
+      "ratio": 0.1,
+      "severity": "Info",
+      "text": "GET /health 200 in <Number-1> ms"
+     }
+    ],
+    "recent_queries": 0,
+    "region": "us-east-1",
+    "retention_days": null,
+    "storage_usd": 15.0,
+    "stored_bytes": 536870912000,
+    "subscription_filters": 0,
+    "vended": false
+   },
+   {
+    "approx_price": false,
+    "created_ms": 1758535200000,
+    "days": 30,
+    "ingest_usd": 15.0,
+    "ingested_bytes": 32212254720.0,
+    "ingested_events": 15000000.0,
+    "insights": {
+     "bytes_scanned": 1610612736.0,
+     "est_bytes": 1073741824.0,
+     "status": "Complete",
+     "window_hours": 24.0
+    },
+    "last_day_bytes": 1073741824,
+    "log_class": "STANDARD",
+    "metric_filters": 1,
+    "monthly_ingest_gb": 30.0,
+    "monthly_usd": 15.15,
+    "name": "/aws/lambda/checkout-prod",
+    "never_expires": false,
+    "patterns": [
+     {
+      "byte_share": 0.38823529411764707,
+      "count": 3000,
+      "flags": [
+       "lambda_platform"
+      ],
+      "id": "d6655ed952ca",
+      "monthly_usd": 5.823529411764706,
+      "ratio": 0.3,
+      "severity": "Info",
+      "text": "REPORT RequestId: <UUID-1> Duration: <Number-2> ms Billed Duration: <Number-3> ms"
+     },
+     {
+      "byte_share": 0.21176470588235294,
+      "count": 3000,
+      "flags": [
+       "lambda_platform"
+      ],
+      "id": "07a418f72992",
+      "monthly_usd": 3.176470588235294,
+      "ratio": 0.3,
+      "severity": "Info",
+      "text": "START RequestId: <UUID-1> Version: $LATEST"
+     }
+    ],
+    "recent_queries": 0,
+    "region": "us-east-1",
+    "retention_days": 14,
+    "storage_usd": 0.15,
+    "stored_bytes": 5368709120,
+    "subscription_filters": 0,
+    "vended": true
+   },
+   {
+    "approx_price": false,
+    "created_ms": 1785319200000,
+    "days": 30,
+    "ingest_usd": 0.0,
+    "ingested_bytes": 0.0,
+    "ingested_events": 0.0,
+    "insights": null,
+    "last_day_bytes": 0.0,
+    "log_class": "STANDARD",
+    "metric_filters": 0,
+    "monthly_ingest_gb": 0.0,
+    "monthly_usd": 0.03,
+    "name": "/app/kept-staging",
+    "never_expires": false,
+    "patterns": [],
+    "recent_queries": 0,
+    "region": "us-east-1",
+    "retention_days": 30,
+    "storage_usd": 0.03,
+    "stored_bytes": 1073741824,
+    "subscription_filters": 0,
+    "vended": false
+   }
+  ],
+  "insights": {
+   "budget_gb": 5,
+   "est_usd": 0.015,
+   "planned_gb": 3.0,
+   "queries": [
+    {
+     "bytes_scanned": 1610612736.0,
+     "est_bytes": 2147483648.0,
+     "group": "us-east-1:/ecs/api-prod",
+     "status": "Complete",
+     "window_hours": 24.0
+    },
+    {
+     "bytes_scanned": 1610612736.0,
+     "est_bytes": 1073741824.0,
+     "group": "us-east-1:/aws/lambda/checkout-prod",
+     "status": "Complete",
+     "window_hours": 24.0
+    }
+   ],
+   "ran": true,
+   "scanned_gb": 3.0,
+   "skipped": [
+    {
+     "group": "us-east-1:/app/kept-staging",
+     "reason": "no ingestion"
+    }
+   ],
+   "usd": 0.015
+  },
+  "notes": [],
+  "pitch": {
+   "install": "templates/github/workflows/dawnfix.yml in github.com/dawnfix/dawnfix",
+   "line": "Dawnfix watches these same logs for new errors and opens a draft PR with a failing test and the fix, from your own GitHub Actions. Free and source available. Hosted status page and email alerts: Dawnfix Enterprise.",
+   "product": "Dawnfix",
+   "url": "https://dawnfix.dev/docs/setup"
+  },
+  "prices_source": {
+   "cross_check": "https://aws.amazon.com/cloudwatch/pricing/ (worked examples: $0.50/GB Standard ingestion, $0.25/GB Infrequent Access, $0.03/GB-month storage, vended tiers 0.50/0.25/0.10/0.05, all US East N. Virginia); Logs Insights $0.005/GB scanned confirmed by third-party guides",
+   "primary": "AWS Price List bulk API, offer AmazonCloudWatch, https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/<region>/index.json",
+   "publication_date": "2026-10-07",
+   "retrieved": "2026-10-27",
+   "usage_types": {
+    "ingest_ia_gb": "<REGION>-DataProcessingIA-Bytes",
+    "ingest_standard_gb": "<REGION>-DataProcessing-Bytes",
+    "insights_scanned_gb": "<REGION>-DataScanned-Bytes",
+    "storage_gb_month": "<REGION>-TimedStorage-ByteHrs",
+    "vended_ia_tiers": "<REGION>-VendedLogIA-Bytes",
+    "vended_standard_tiers": "<REGION>-VendedLog-Bytes"
+   }
+  },
+  "product": "Dawnfix Logbill",
+  "regions": [
+   "us-east-1"
+  ],
+  "retention_days": 30,
+  "sample": true,
+  "schema": "logbill.report/1",
+  "suggestions": [
+   {
+    "command": "",
+    "detail": "About 60% of this group's bytes (50% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.",
+    "group": "/ecs/api-prod",
+    "kind": "noisy_pattern",
+    "monthly_usd": 18.04878048780488,
+    "pattern_ids": [
+     "59821845c267"
+    ],
+    "region": "us-east-1",
+    "title": "Drop or sample a noisy log line"
+   },
+   {
+    "command": "",
+    "detail": "Raise the log level to INFO in production (`logbill locate` finds the lines).",
+    "group": "/ecs/api-prod",
+    "kind": "debug_in_prod",
+    "monthly_usd": 18.04878048780488,
+    "pattern_ids": [
+     "59821845c267"
+    ],
+    "region": "us-east-1",
+    "title": "DEBUG-level lines in what looks like prod"
+   },
+   {
+    "command": "",
+    "detail": "No metric or subscription filters; recent Insights queries: 0. The class is fixed at creation: create a new group in Infrequent Access and point the writer at it. You lose Live Tail and filters; Insights still works.",
+    "group": "/ecs/api-prod",
+    "kind": "infrequent_access",
+    "monthly_usd": 15.0,
+    "pattern_ids": [],
+    "region": "us-east-1",
+    "title": "Move to the Infrequent Access log class"
+   },
+   {
+    "command": "aws logs put-retention-policy --region us-east-1 --log-group-name /ecs/api-prod --retention-in-days 30",
+    "detail": "Stores 500.0 GB with no expiry. At 30 days about 15.0 GB would remain.",
+    "group": "/ecs/api-prod",
+    "kind": "retention",
+    "monthly_usd": 14.549999999999999,
+    "pattern_ids": [],
+    "region": "us-east-1",
+    "title": "Set 30-day retention (never expires today)"
+   },
+   {
+    "command": "aws logs put-retention-policy --region us-east-1 --log-group-name /ecs/api-prod --retention-in-days 90",
+    "detail": "Stores 500.0 GB with no expiry. At 90 days about 45.0 GB would remain.",
+    "group": "/ecs/api-prod",
+    "kind": "retention",
+    "monthly_usd": 13.65,
+    "pattern_ids": [],
+    "region": "us-east-1",
+    "title": "Set 90-day retention (never expires today)"
+   },
+   {
+    "command": "aws lambda update-function-configuration --region us-east-1 --function-name checkout-prod --logging-config LogFormat=JSON,SystemLogLevel=WARN",
+    "detail": "Platform lines on every invocation. JSON log format with system log level WARN drops them (Duration and memory stay in AWS/Lambda metrics). JSON format also reshapes your own log lines: check parsers and metric filters first.",
+    "group": "/aws/lambda/checkout-prod",
+    "kind": "lambda_platform",
+    "monthly_usd": 9.0,
+    "pattern_ids": [
+     "d6655ed952ca",
+     "07a418f72992"
+    ],
+    "region": "us-east-1",
+    "title": "Lambda START/END/REPORT lines"
+   },
+   {
+    "command": "",
+    "detail": "About 15% of this group's bytes (20% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.",
+    "group": "/ecs/api-prod",
+    "kind": "noisy_pattern",
+    "monthly_usd": 4.487804878048781,
+    "pattern_ids": [
+     "2203dc1c7035"
+    ],
+    "region": "us-east-1",
+    "title": "Drop or sample a noisy log line"
+   },
+   {
+    "command": "",
+    "detail": "About 5% of this group's bytes (10% of events). Dropping it saves the full amount; logging 1 in 10 saves 90%.",
+    "group": "/ecs/api-prod",
+    "kind": "noisy_pattern",
+    "monthly_usd": 1.4634146341463414,
+    "pattern_ids": [
+     "cd377624ef4a"
+    ],
+    "region": "us-east-1",
+    "title": "Drop or sample a noisy log line"
+   }
+  ],
+  "top": [
+   "us-east-1:/ecs/api-prod",
+   "us-east-1:/aws/lambda/checkout-prod",
+   "us-east-1:/app/kept-staging"
+  ],
+  "totals": {
+   "free_tier_note": "Before the AWS free tier (5 GB/month, worth at most $2.50).",
+   "groups": 3,
+   "ingest_usd": 45.0,
+   "monthly_ingest_gb": 90.0,
+   "monthly_usd": 60.18,
+   "never_expire": 1,
+   "savings_usd": 50.550000000000004,
+   "storage_usd": 15.18,
+   "stored_gb": 506.0
+  }
+ },
+ "schema": "logbill.sample/1"
+}

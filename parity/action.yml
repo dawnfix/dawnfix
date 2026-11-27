@@ -1,0 +1,66 @@
+# Composite GitHub Action. Brand/org strings: see src/dawnfix_parity/brand.py.
+name: Dawnfix Parity check
+description: >-
+  Read-only drift check between two AWS environments (SSM Parameter Store, Secrets Manager,
+  ECS task definitions, Lambda env). Compares names and metadata, never prints values.
+  Fails the job on drift and writes a Markdown job summary.
+branding:
+  icon: git-pull-request
+  color: blue
+
+inputs:
+  left:
+    description: Environment name from the config, e.g. dev
+    required: true
+  right:
+    description: Environment name from the config, e.g. prod
+    required: true
+  config:
+    description: Path to the config file
+    default: .parity.yml
+  compare-hashes:
+    description: "'true' to also compare salted SHA-256 digests of values in memory (needs the hash-mode IAM add-on)"
+    default: "false"
+  fail-on:
+    description: Comma list of finding kinds / inventory flags that fail the job (empty = defaults)
+    default: ""
+  python-version:
+    description: Python to install
+    default: "3.12"
+
+outputs:
+  exit-code:
+    description: 0 no drift, 1 drift, 2 config error, 3 AWS error, 4 read-only guard tripped
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install parity
+      shell: bash
+      # parity imports dawnfix-core (the read-only guard), which sits next to it in the repo
+      run: python -m pip install --quiet --disable-pip-version-check "${GITHUB_ACTION_PATH}/../core" "${GITHUB_ACTION_PATH}"
+
+    - name: parity check
+      id: check
+      shell: bash
+      env:
+        INPUT_LEFT: ${{ inputs.left }}
+        INPUT_RIGHT: ${{ inputs.right }}
+        INPUT_CONFIG: ${{ inputs.config }}
+        INPUT_HASHES: ${{ inputs.compare-hashes }}
+        INPUT_FAIL_ON: ${{ inputs.fail-on }}
+      run: |
+        args=(-c "$INPUT_CONFIG" check --left "$INPUT_LEFT" --right "$INPUT_RIGHT" --summary "$GITHUB_STEP_SUMMARY")
+        [ "$INPUT_HASHES" = "true" ] && args+=(--compare-hashes)
+        [ -n "$INPUT_FAIL_ON" ] && args+=(--fail-on "$INPUT_FAIL_ON")
+        set +e
+        parity "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code

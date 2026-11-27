@@ -1,0 +1,91 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Agency fleet board: the role the agency's own collector workflow runs as. GitHub OIDC for
+  one repo and branch, and nothing but sts:AssumeRole on the clients' read roles. It holds
+  no read permissions of its own; every client account grants those, with its External ID.
+
+Parameters:
+  GitHubOrg:
+    Type: String
+    AllowedPattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,38}$"
+  GitHubRepo:
+    Type: String
+    AllowedPattern: "^[A-Za-z0-9_.-]{1,100}$"
+  Branch:
+    Type: String
+    Default: main
+    AllowedPattern: "^[A-Za-z0-9_./-]{1,255}$"
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+  ExistingOIDCProviderArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^(arn:aws[a-z-]*:iam::\\d{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com)?$"
+  RoleName:
+    Type: String
+    Default: fleet-hub
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+  ClientRoleName:
+    Type: String
+    Default: fleet-read
+    Description: The RoleName every client stack used. The hub may assume that role name in any account, and nothing else.
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+
+Rules:
+  ExistingProviderGiven:
+    RuleCondition: !Equals [!Ref CreateOIDCProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOIDCProviderArn, ""]]
+        AssertDescription: ExistingOIDCProviderArn is required when CreateOIDCProvider is false.
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  HubRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Agency fleet collector - may only assume client read roles.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitHubOIDCThisRepoOnly
+            Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref GitHubOIDCProvider, !Ref ExistingOIDCProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${Branch}"
+      Policies:
+        - PolicyName: fleet-assume-client-read-roles
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AssumeClientReadRoles
+                Effect: Allow
+                Action: sts:AssumeRole
+                Resource: !Sub "arn:${AWS::Partition}:iam::*:role/${ClientRoleName}"
+      Tags:
+        - Key: managed-by
+          Value: fleet
+
+Outputs:
+  HubRoleArn:
+    Description: Each client puts this in their stack as AgencyPrincipalArn.
+    Value: !GetAtt HubRole.Arn

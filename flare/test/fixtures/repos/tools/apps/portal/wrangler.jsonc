@@ -1,0 +1,8 @@
+{
+  "name": "portal",
+  "compatibility_date": "2026-10-01",
+  "routes": [{ "pattern": "portal.example.net", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false,
+  "unsafe": { "bindings": [{ "name": "FORM_LIMIT", "type": "ratelimit", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } }] }
+}

@@ -1,0 +1,182 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Agency fleet board: read-only role in a client account. Lets the agency's collector (or
+  the client's own GitHub Actions) count alarms in ALARM, read certificate expiry and read
+  two weeks of daily spend. No write actions, no logs, no data, no long-lived keys.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Agency access (cross-account, with External ID)" }
+        Parameters: [AgencyPrincipalArn, ExternalId]
+      - Label: { default: "Or: this account's own GitHub Actions (OIDC)" }
+        Parameters: [GitHubOrg, GitHubRepo, Branch, CreateOIDCProvider, ExistingOIDCProviderArn]
+      - Label: { default: "Role" }
+        Parameters: [RoleName, AllowCostExplorer]
+    ParameterLabels:
+      AgencyPrincipalArn: { default: "Agency collector role ARN (leave empty for GitHub OIDC only)" }
+      ExternalId: { default: "External ID the agency gave you" }
+      AllowCostExplorer: { default: "Allow the weekly spend comparison (Cost Explorer)?" }
+
+Parameters:
+  AgencyPrincipalArn:
+    Type: String
+    Default: ""
+    Description: >-
+      The IAM role the agency's collector runs as, arn:aws:iam::<agency account>:role/<name>.
+      Only this role may assume the read role, and only with the External ID below.
+    AllowedPattern: "^(arn:aws[a-z-]*:iam::\\d{12}:role/[\\w+=,.@/-]{1,128})?$"
+  ExternalId:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: >-
+      A value unique to this client, chosen by the agency (not secret, but not guessable
+      either). Required with AgencyPrincipalArn: it stops anyone else the agency works for
+      from pointing the agency's collector at this account (the confused-deputy problem).
+    AllowedPattern: "^([\\w+=,.@:/-]{16,128})?$"
+    ConstraintDescription: "16 to 128 characters of letters, digits and + = , . @ : / _ -"
+  GitHubOrg:
+    Type: String
+    Default: ""
+    Description: GitHub org or user of the repo whose workflow may assume the role (OIDC). Leave empty for agency access only.
+    AllowedPattern: "^([A-Za-z0-9][A-Za-z0-9-]{0,38})?$"
+  GitHubRepo:
+    Type: String
+    Default: ""
+    AllowedPattern: "^([A-Za-z0-9_.-]{1,100})?$"
+  Branch:
+    Type: String
+    Default: main
+    AllowedPattern: "^[A-Za-z0-9_./-]{1,255}$"
+  CreateOIDCProvider:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Only with GitHub OIDC. One provider per account for token.actions.githubusercontent.com;
+      if the dawnfix read role created it already, keep false and give its ARN.
+  ExistingOIDCProviderArn:
+    Type: String
+    Default: ""
+    AllowedPattern: "^(arn:aws[a-z-]*:iam::\\d{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com)?$"
+  RoleName:
+    Type: String
+    Default: fleet-read
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+  AllowCostExplorer:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      Cost Explorer is billed to this account at $0.01 per request. The collector makes at
+      most one per day. In an AWS Organization, member accounts also need Cost Explorer
+      access enabled by the management account.
+
+Rules:
+  SomebodyMayAssume:
+    Assertions:
+      - Assert: !Or
+          - !Not [!Equals [!Ref AgencyPrincipalArn, ""]]
+          - !Not [!Equals [!Ref GitHubRepo, ""]]
+        AssertDescription: Give AgencyPrincipalArn (with ExternalId), or GitHubOrg and GitHubRepo, or both.
+  AgencyNeedsExternalId:
+    RuleCondition: !Not [!Equals [!Ref AgencyPrincipalArn, ""]]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExternalId, ""]]
+        AssertDescription: ExternalId is required when AgencyPrincipalArn is set.
+  GitHubNeedsOrgAndProvider:
+    RuleCondition: !Not [!Equals [!Ref GitHubRepo, ""]]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref GitHubOrg, ""]]
+        AssertDescription: GitHubOrg is required with GitHubRepo.
+      - Assert: !Or
+          - !Equals [!Ref CreateOIDCProvider, "true"]
+          - !Not [!Equals [!Ref ExistingOIDCProviderArn, ""]]
+        AssertDescription: Set CreateOIDCProvider to true or give ExistingOIDCProviderArn.
+
+Conditions:
+  UseAgency: !Not [!Equals [!Ref AgencyPrincipalArn, ""]]
+  UseGitHub: !Not [!Equals [!Ref GitHubRepo, ""]]
+  CreateProvider: !And [!Condition UseGitHub, !Equals [!Ref CreateOIDCProvider, "true"]]
+  CostExplorer: !Equals [!Ref AllowCostExplorer, "true"]
+
+Resources:
+  GitHubOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  ReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Agency fleet board, read-only - alarms in ALARM, certificate expiry, daily spend.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - !If
+            - UseAgency
+            - Sid: AgencyCollectorWithExternalId
+              Effect: Allow
+              Principal:
+                AWS: !Ref AgencyPrincipalArn
+              Action: sts:AssumeRole
+              Condition:
+                StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+            - !Ref AWS::NoValue
+          - !If
+            - UseGitHub
+            - Sid: GitHubOIDCThisRepoOnly
+              Effect: Allow
+              Principal:
+                Federated: !If [CreateProvider, !Ref GitHubOIDCProvider, !Ref ExistingOIDCProviderArn]
+              Action: sts:AssumeRoleWithWebIdentity
+              Condition:
+                StringEquals:
+                  token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                  token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/${Branch}"
+            - !Ref AWS::NoValue
+      Policies:
+        - PolicyName: fleet-read-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AlarmsInAlarm
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                Resource: "*"
+              - Sid: ListCertificates
+                Effect: Allow
+                Action:
+                  - acm:ListCertificates
+                Resource: "*"
+              - Sid: CertificateExpiry
+                Effect: Allow
+                Action:
+                  - acm:DescribeCertificate
+                Resource: !Sub "arn:${AWS::Partition}:acm:*:${AWS::AccountId}:certificate/*"
+              - !If
+                - CostExplorer
+                - Sid: DailySpend
+                  Effect: Allow
+                  Action:
+                    - ce:GetCostAndUsage
+                  Resource: "*"
+                - !Ref AWS::NoValue
+      Tags:
+        - Key: managed-by
+          Value: fleet
+
+Outputs:
+  RoleArn:
+    Description: Give this to the agency (it goes in their fleet.yml as role_arn).
+    Value: !GetAtt ReadRole.Arn

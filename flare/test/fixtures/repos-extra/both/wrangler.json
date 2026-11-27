@@ -1,0 +1,1 @@
+{ "name": "both", "main": "src/index.ts", "compatibility_date": "2026-09-01", "triggers": { "crons": ["0 6 * * *"] } }

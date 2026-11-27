@@ -1,0 +1,74 @@
+{
+  "accounts": [
+    {
+      "account": "542d6042622b47fb",
+      "alarms": {
+        "firing": 2,
+        "status": "ok",
+        "stuck_24h": 1
+      },
+      "certs": {
+        "expired": 0,
+        "expiring_14d": 1,
+        "expiring_30d": 1,
+        "in_use": 1,
+        "manual_renewal_30d": 1,
+        "min_days_left": 12,
+        "status": "ok",
+        "total": 1,
+        "truncated": false
+      },
+      "credential": "ok",
+      "env": "prod",
+      "orphans": {
+        "count": null,
+        "status": "not_implemented"
+      },
+      "provider": "aws",
+      "spend": {
+        "as_of": "2026-10-26",
+        "cached": false,
+        "currency": "USD",
+        "last_week_cents": 21175,
+        "status": "ok",
+        "this_week_cents": 29050
+      }
+    },
+    {
+      "account": "968462143075679c",
+      "alarms": {
+        "firing": null,
+        "status": "skipped",
+        "stuck_24h": null
+      },
+      "certs": {
+        "expired": null,
+        "expiring_14d": null,
+        "expiring_30d": null,
+        "in_use": null,
+        "manual_renewal_30d": null,
+        "min_days_left": null,
+        "status": "skipped",
+        "total": null,
+        "truncated": false
+      },
+      "credential": "denied",
+      "env": "staging",
+      "orphans": {
+        "count": null,
+        "status": "not_implemented"
+      },
+      "provider": "aws",
+      "spend": {
+        "as_of": null,
+        "cached": false,
+        "currency": null,
+        "last_week_cents": null,
+        "status": "skipped",
+        "this_week_cents": null
+      }
+    }
+  ],
+  "generated_at": "2026-10-27T06:05:00Z",
+  "schema": "dawnfix.fleet/1"
+}

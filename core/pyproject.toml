@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-core"
+version = "0.1.0"
+description = "The read job of Dawnfix, the AI SRE (AI Site Reliability Engineer) that runs in your own GitHub Actions: a deterministic, read-only prod log tick for AWS and GCP. Query, fingerprint, dedupe, redact; logs stay in your accounts."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+authors = [{ name = "Dawnfix" }]
+keywords = ["ai-sre", "sre", "site-reliability-engineering", "incident-response", "aws", "gcp", "cloudwatch", "cloud-logging", "github-actions"]
+dependencies = [
+    "PyYAML>=6.0",
+    "boto3>=1.28",
+]
+
+[project.optional-dependencies]
+gcp = ["google-cloud-logging>=3.5"]
+dev = ["pytest>=8", "jsonschema>=4.18"]
+
+[project.scripts]
+dawnfix = "dawnfix_core.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

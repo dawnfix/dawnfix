@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dawnfix.dev/schema/ingest.schema.json",
+  "title": "dawnfix ingest payload",
+  "description": "The only data sent to the hosted service. Enums, counts, hashes, route templates and a PR URL; no free text. The service rejects anything that does not validate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "generated_at", "window_minutes", "phi_mode", "counts", "sources", "findings"],
+  "properties": {
+    "schema": { "const": "dawnfix.ingest/1" },
+    "generated_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$" },
+    "window_minutes": { "type": "integer", "minimum": 1, "maximum": 10080 },
+    "phi_mode": { "type": "boolean" },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["events", "new", "spike", "known", "ignored"],
+      "properties": {
+        "events": { "$ref": "#/$defs/count" },
+        "new": { "$ref": "#/$defs/count" },
+        "spike": { "$ref": "#/$defs/count" },
+        "known": { "$ref": "#/$defs/count" },
+        "ignored": { "$ref": "#/$defs/count" }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "ok", "error_code"],
+        "properties": {
+          "type": { "enum": ["aws", "gcp"] },
+          "ok": { "type": "boolean" },
+          "error_code": {
+            "oneOf": [ { "type": "null" }, { "type": "string", "maxLength": 64, "pattern": "^[A-Za-z0-9_.-]+$" } ]
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fingerprint", "status", "severity", "source", "kind", "route", "method",
+          "http_status", "error_class", "count", "pr_url"
+        ],
+        "properties": {
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{16}$" },
+          "status": { "enum": ["new", "spike"] },
+          "severity": { "enum": ["critical", "high", "medium", "low"] },
+          "source": { "enum": ["aws", "gcp"] },
+          "kind": { "enum": ["log", "alarm", "alb"] },
+          "route": { "type": "string", "maxLength": 200, "pattern": "^(/[A-Za-z0-9_.:-]*)*$" },
+          "method": { "enum": [null, "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"] },
+          "http_status": { "oneOf": [ { "type": "null" }, { "type": "integer", "minimum": 100, "maximum": 599 } ] },
+          "error_class": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$" },
+          "count": { "type": "integer", "minimum": 1, "maximum": 100000000 },
+          "pr_url": {
+            "oneOf": [
+              { "type": "null" },
+              { "type": "string", "maxLength": 200, "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/[0-9]+$" }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "count": { "type": "integer", "minimum": 0 }
+  }
+}

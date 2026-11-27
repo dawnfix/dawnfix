@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-receipt"
+version = "0.1.0"
+description = "Cost Explorer before/after receipt for a deploy, posted as one self-updating PR or commit comment."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+authors = [{ name = "Dawnfix" }]
+keywords = ["sre", "aws", "cost-explorer", "finops", "deploy-cost"]
+dependencies = [
+    "boto3>=1.28",
+    "dawnfix-core",   # the read-only client guard; installed from ../core (see Makefile)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "jsonschema>=4.18"]
+
+[project.scripts]
+receipt = "dawnfix_receipt.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

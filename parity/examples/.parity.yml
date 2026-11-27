@@ -1,0 +1,67 @@
+# .parity.yml: which parts of AWS make up each environment.
+# Parity reads names and metadata only. Values are read only with --compare-hashes,
+# and then only as salted SHA-256 digests held in memory.
+version: 1
+
+environments:
+  dev:
+    region: eu-central-1
+    aws:
+      profile: myapp-dev                 # local runs; ignored when credentials come from OIDC
+      # role_arn: arn:aws:iam::111111111111:role/parity-read   # assumed from the CI role
+      account_id: "111111111111"         # optional; lets parity spot ARNs in the other account
+    ssm:
+      paths: [/myapp/dev]                # "/..." = path, recursive; anything else = name prefix
+    secrets:
+      prefixes: [myapp/dev/]
+    ecs:
+      - cluster: myapp-dev
+        services: ["myapp-*"]            # names or globs; default all
+        task_definitions: [myapp-migrate-dev]   # families run outside a service (latest ACTIVE)
+    lambda:
+      functions: ["myapp-dev-*"]
+    # The matched SSM path / secret prefix is stripped first (/myapp/dev/DB_URL -> DB_URL),
+    # then these rules run in order on every name (service, function, parameter, secret).
+    normalize:
+      - env_token: dev                   # myapp-api-dev -> myapp-api-{env}; /dev/ -> /{env}/
+      # - strip_prefix: legacy/
+      # - replace: {from: "_DEV", to: ""}
+      # - regex: {pattern: "-v[0-9]+$", to: ""}
+      #   kinds: [lambda]
+    markers: []                          # extra substrings that mean "this is dev", e.g. ["-dev-"]
+
+  prod:
+    region: eu-central-1
+    aws:
+      profile: myapp-prod
+      account_id: "222222222222"
+    ssm:
+      paths: [/myapp/prod]
+    secrets:
+      prefixes: [myapp/prod/]
+    ecs:
+      - cluster: myapp-prod
+        services: ["myapp-*"]
+        task_definitions: [myapp-migrate-prod]
+    lambda:
+      functions: ["myapp-prod-*"]
+    normalize:
+      - env_token: prod
+
+# Known, intentional differences. `key` is a glob over the normalised key printed in reports.
+allow:
+  - kind: missing_in_right
+    key: "ssm:DEBUG_*"
+    reason: debug toggles exist only in dev
+  - kind: "*"
+    key: "lambda:myapp-{env}-seed/*"
+    reason: seed job is dev only
+
+# Only used with --compare-hashes.
+hashes:
+  must_match: ["ssm:FEATURE_*", "ecs:*/LOG_FORMAT"]   # values that must be equal across envs
+  must_differ: ["ssm:*_URL"]                          # SecureStrings and secrets always must differ
+
+inventory:
+  unread_days: 90
+  rotation_max_age_days: 90

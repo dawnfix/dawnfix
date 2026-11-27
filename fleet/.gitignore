@@ -1,0 +1,8 @@
+collector/.venv/
+__pycache__/
+*.egg-info/
+.pytest_cache/
+board/node_modules/
+.fleet-cache/
+summary.json
+!fixtures/summary.json

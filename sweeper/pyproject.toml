@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dawnfix-sweeper"
+version = "0.1.0"
+description = "Read-only post-cutover sweep: find what the old AWS stack left behind and write a teardown plan. Never deletes."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "FSL-1.1-ALv2"
+authors = [{ name = "Dawnfix" }]
+keywords = ["sre", "aws", "cleanup", "finops", "migration"]
+dependencies = [
+    "boto3>=1.28",
+    "dawnfix-core",   # the read-only client guard; installed from ../core (see Makefile)
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+sweeper = "dawnfix_sweeper.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+dawnfix_sweeper = ["prices.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "."]

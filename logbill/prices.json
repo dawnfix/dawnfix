@@ -1,0 +1,751 @@
+{
+  "currency": "USD",
+  "source": {
+    "primary": "AWS Price List bulk API, offer AmazonCloudWatch, https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonCloudWatch/current/<region>/index.json",
+    "publication_date": "2026-10-07",
+    "retrieved": "2026-10-27",
+    "cross_check": "https://aws.amazon.com/cloudwatch/pricing/ (worked examples: $0.50/GB Standard ingestion, $0.25/GB Infrequent Access, $0.03/GB-month storage, vended tiers 0.50/0.25/0.10/0.05, all US East N. Virginia); Logs Insights $0.005/GB scanned confirmed by third-party guides",
+    "usage_types": {
+      "ingest_standard_gb": "<REGION>-DataProcessing-Bytes",
+      "ingest_ia_gb": "<REGION>-DataProcessingIA-Bytes",
+      "storage_gb_month": "<REGION>-TimedStorage-ByteHrs",
+      "insights_scanned_gb": "<REGION>-DataScanned-Bytes",
+      "vended_standard_tiers": "<REGION>-VendedLog-Bytes",
+      "vended_ia_tiers": "<REGION>-VendedLogIA-Bytes"
+    }
+  },
+  "free_tier": {
+    "gb_per_month": 5,
+    "note": "5 GB per month shared across ingestion, archive storage and Logs Insights scanned (Global-DataProcessing-Bytes / Global-DataScanned-Bytes). Applied once to the account total, never per group."
+  },
+  "tiers_note": "Tier rows are [up_to_GB_per_month, USD_per_GB]; null means no upper bound. Vended logs (Lambda, VPC Flow Logs, Route 53 resolver, API Gateway access logs and other AWS-service logs) are priced on these tiers per account per region per month; tiers reset monthly.",
+  "default_region": "us-east-1",
+  "uncertain": [
+    "Which log groups AWS bills as vended is decided by the delivering service, not the group name. logbill guesses from the name prefix (vended_prefixes); a custom group that a service delivers into is billed vended but counted as custom here.",
+    "vended_prefixes is deliberately short: Lambda logs are vended-priced since May 2025 and /aws/vendedlogs/ is the prefix AWS recommends for vended deliveries; VPC Flow Logs, Route 53 resolver and API Gateway logs land in groups of any name. At the first tier (up to 10 TB/month) vended and custom Standard ingestion cost the same in every listed region, so the guess only matters above 10 TB.",
+    "storedBytes from DescribeLogGroups is used as the billed storage. AWS bills archive storage on compressed bytes; whether storedBytes is the compressed figure is not stated in the API reference.",
+    "Regions not listed here fall back to default_region prices and are marked approximate in the report.",
+    "The Insights cost estimate assumes a query scans about the bytes ingested in its window (IncomingBytes). Real bytesScanned can differ; logbill reads it from GetQueryResults and stops at the budget.",
+    "Log groups in the DELIVERY class are not priced (they hold logs on the way to S3/Firehose and are billed per delivery)."
+  ],
+  "vended_prefixes": [
+    "/aws/lambda/",
+    "/aws/vendedlogs/"
+  ],
+  "regions": {
+    "us-east-1": {
+      "ingest_standard_gb": 0.5,
+      "ingest_ia_gb": 0.25,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.005,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.5
+        ],
+        [
+          30720.0,
+          0.25
+        ],
+        [
+          51200.0,
+          0.1
+        ],
+        [
+          null,
+          0.05
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.25
+        ],
+        [
+          30720.0,
+          0.15
+        ],
+        [
+          51200.0,
+          0.075
+        ],
+        [
+          null,
+          0.05
+        ]
+      ]
+    },
+    "us-east-2": {
+      "ingest_standard_gb": 0.5,
+      "ingest_ia_gb": 0.25,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.005,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.5
+        ],
+        [
+          30720.0,
+          0.25
+        ],
+        [
+          51200.0,
+          0.1
+        ],
+        [
+          null,
+          0.05
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.25
+        ],
+        [
+          30720.0,
+          0.15
+        ],
+        [
+          51200.0,
+          0.075
+        ],
+        [
+          null,
+          0.05
+        ]
+      ]
+    },
+    "us-west-1": {
+      "ingest_standard_gb": 0.67,
+      "ingest_ia_gb": 0.335,
+      "storage_gb_month": 0.033,
+      "insights_scanned_gb": 0.0067,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.67
+        ],
+        [
+          30720.0,
+          0.335
+        ],
+        [
+          51200.0,
+          0.134
+        ],
+        [
+          null,
+          0.067
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.335
+        ],
+        [
+          30720.0,
+          0.201
+        ],
+        [
+          51200.0,
+          0.101
+        ],
+        [
+          null,
+          0.067
+        ]
+      ]
+    },
+    "us-west-2": {
+      "ingest_standard_gb": 0.5,
+      "ingest_ia_gb": 0.25,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.005,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.5
+        ],
+        [
+          30720.0,
+          0.25
+        ],
+        [
+          51200.0,
+          0.1
+        ],
+        [
+          null,
+          0.05
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.25
+        ],
+        [
+          30720.0,
+          0.15
+        ],
+        [
+          51200.0,
+          0.075
+        ],
+        [
+          null,
+          0.05
+        ]
+      ]
+    },
+    "ca-central-1": {
+      "ingest_standard_gb": 0.55,
+      "ingest_ia_gb": 0.275,
+      "storage_gb_month": 0.033,
+      "insights_scanned_gb": 0.0055,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.55
+        ],
+        [
+          30720.0,
+          0.275
+        ],
+        [
+          51200.0,
+          0.11
+        ],
+        [
+          null,
+          0.055
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.275
+        ],
+        [
+          30720.0,
+          0.165
+        ],
+        [
+          51200.0,
+          0.083
+        ],
+        [
+          null,
+          0.055
+        ]
+      ]
+    },
+    "eu-central-1": {
+      "ingest_standard_gb": 0.63,
+      "ingest_ia_gb": 0.315,
+      "storage_gb_month": 0.0324,
+      "insights_scanned_gb": 0.0063,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.63
+        ],
+        [
+          30720.0,
+          0.315
+        ],
+        [
+          51200.0,
+          0.126
+        ],
+        [
+          null,
+          0.063
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.285
+        ],
+        [
+          30720.0,
+          0.171
+        ],
+        [
+          51200.0,
+          0.086
+        ],
+        [
+          null,
+          0.057
+        ]
+      ]
+    },
+    "eu-west-1": {
+      "ingest_standard_gb": 0.57,
+      "ingest_ia_gb": 0.285,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.0057,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.57
+        ],
+        [
+          30720.0,
+          0.285
+        ],
+        [
+          51200.0,
+          0.114
+        ],
+        [
+          null,
+          0.057
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.285
+        ],
+        [
+          30720.0,
+          0.171
+        ],
+        [
+          51200.0,
+          0.086
+        ],
+        [
+          null,
+          0.057
+        ]
+      ]
+    },
+    "eu-west-2": {
+      "ingest_standard_gb": 0.5985,
+      "ingest_ia_gb": 0.299,
+      "storage_gb_month": 0.0315,
+      "insights_scanned_gb": 0.0059,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.5985
+        ],
+        [
+          30720.0,
+          0.2993
+        ],
+        [
+          51200.0,
+          0.1197
+        ],
+        [
+          null,
+          0.0599
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.299
+        ],
+        [
+          30720.0,
+          0.18
+        ],
+        [
+          51200.0,
+          0.09
+        ],
+        [
+          null,
+          0.06
+        ]
+      ]
+    },
+    "eu-west-3": {
+      "ingest_standard_gb": 0.5985,
+      "ingest_ia_gb": 0.299,
+      "storage_gb_month": 0.0315,
+      "insights_scanned_gb": 0.0059,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.5985
+        ],
+        [
+          30720.0,
+          0.2993
+        ],
+        [
+          51200.0,
+          0.1197
+        ],
+        [
+          null,
+          0.0599
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.25
+        ],
+        [
+          30720.0,
+          0.15
+        ],
+        [
+          51200.0,
+          0.075
+        ],
+        [
+          null,
+          0.05
+        ]
+      ]
+    },
+    "eu-north-1": {
+      "ingest_standard_gb": 0.54,
+      "ingest_ia_gb": 0.27,
+      "storage_gb_month": 0.028,
+      "insights_scanned_gb": 0.0054,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.54
+        ],
+        [
+          30720.0,
+          0.271
+        ],
+        [
+          51200.0,
+          0.108
+        ],
+        [
+          null,
+          0.054
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.271
+        ],
+        [
+          30720.0,
+          0.162
+        ],
+        [
+          51200.0,
+          0.0817
+        ],
+        [
+          null,
+          0.054
+        ]
+      ]
+    },
+    "eu-south-1": {
+      "ingest_standard_gb": 0.6,
+      "ingest_ia_gb": 0.3,
+      "storage_gb_month": 0.032,
+      "insights_scanned_gb": 0.006,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.6
+        ],
+        [
+          30720.0,
+          0.3
+        ],
+        [
+          51200.0,
+          0.12
+        ],
+        [
+          null,
+          0.06
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.3
+        ],
+        [
+          30720.0,
+          0.18
+        ],
+        [
+          51200.0,
+          0.09
+        ],
+        [
+          null,
+          0.06
+        ]
+      ]
+    },
+    "ap-south-1": {
+      "ingest_standard_gb": 0.67,
+      "ingest_ia_gb": 0.335,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.0067,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.67
+        ],
+        [
+          30720.0,
+          0.335
+        ],
+        [
+          51200.0,
+          0.134
+        ],
+        [
+          null,
+          0.067
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.335
+        ],
+        [
+          30720.0,
+          0.201
+        ],
+        [
+          51200.0,
+          0.101
+        ],
+        [
+          null,
+          0.067
+        ]
+      ]
+    },
+    "ap-southeast-1": {
+      "ingest_standard_gb": 0.7,
+      "ingest_ia_gb": 0.35,
+      "storage_gb_month": 0.03,
+      "insights_scanned_gb": 0.007,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.7
+        ],
+        [
+          30720.0,
+          0.35
+        ],
+        [
+          51200.0,
+          0.14
+        ],
+        [
+          null,
+          0.07
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.35
+        ],
+        [
+          30720.0,
+          0.21
+        ],
+        [
+          51200.0,
+          0.105
+        ],
+        [
+          null,
+          0.07
+        ]
+      ]
+    },
+    "ap-southeast-2": {
+      "ingest_standard_gb": 0.67,
+      "ingest_ia_gb": 0.335,
+      "storage_gb_month": 0.033,
+      "insights_scanned_gb": 0.0067,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.67
+        ],
+        [
+          30720.0,
+          0.335
+        ],
+        [
+          51200.0,
+          0.134
+        ],
+        [
+          null,
+          0.067
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.335
+        ],
+        [
+          30720.0,
+          0.201
+        ],
+        [
+          51200.0,
+          0.101
+        ],
+        [
+          null,
+          0.067
+        ]
+      ]
+    },
+    "ap-northeast-1": {
+      "ingest_standard_gb": 0.76,
+      "ingest_ia_gb": 0.38,
+      "storage_gb_month": 0.033,
+      "insights_scanned_gb": 0.0076,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.76
+        ],
+        [
+          30720.0,
+          0.38
+        ],
+        [
+          51200.0,
+          0.152
+        ],
+        [
+          null,
+          0.076
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.38
+        ],
+        [
+          30720.0,
+          0.228
+        ],
+        [
+          51200.0,
+          0.114
+        ],
+        [
+          null,
+          0.076
+        ]
+      ]
+    },
+    "ap-northeast-2": {
+      "ingest_standard_gb": 0.76,
+      "ingest_ia_gb": 0.38,
+      "storage_gb_month": 0.0314,
+      "insights_scanned_gb": 0.0076,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.76
+        ],
+        [
+          30720.0,
+          0.38
+        ],
+        [
+          51200.0,
+          0.152
+        ],
+        [
+          null,
+          0.076
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.38
+        ],
+        [
+          30720.0,
+          0.228
+        ],
+        [
+          51200.0,
+          0.114
+        ],
+        [
+          null,
+          0.076
+        ]
+      ]
+    },
+    "sa-east-1": {
+      "ingest_standard_gb": 0.9,
+      "ingest_ia_gb": 0.45,
+      "storage_gb_month": 0.0408,
+      "insights_scanned_gb": 0.009,
+      "vended_standard_tiers": [
+        [
+          10240.0,
+          0.9
+        ],
+        [
+          30720.0,
+          0.45
+        ],
+        [
+          51200.0,
+          0.18
+        ],
+        [
+          null,
+          0.09
+        ]
+      ],
+      "vended_ia_tiers": [
+        [
+          10240.0,
+          0.45
+        ],
+        [
+          30720.0,
+          0.27
+        ],
+        [
+          51200.0,
+          0.135
+        ],
+        [
+          null,
+          0.09
+        ]
+      ]
+    }
+  }
+}

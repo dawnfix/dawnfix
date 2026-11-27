@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ParityMetadata",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeParameters",
+        "secretsmanager:ListSecrets",
+        "secretsmanager:DescribeSecret",
+        "ecs:ListServices",
+        "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
+        "lambda:ListFunctions",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ParityCloudTrailOptIn",
+      "Effect": "Allow",
+      "Action": [
+        "cloudtrail:LookupEvents"
+      ],
+      "Resource": "*"
+    }
+  ]
+}

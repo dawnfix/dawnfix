@@ -1,0 +1,54 @@
+# .dawnfix.yml - what Dawnfix watches and what it may do (docs/spec.md section 4.2).
+# Copy to .dawnfix.yml at the repo root (README.md, "Set up"); every value below is an example to replace.
+# Check it with: dawnfix validate --config .dawnfix.yml
+version: 1
+
+# diagnose: report new errors as issues | plan: issue with a proposed fix | draft-pr: open draft PRs.
+# Start with diagnose for a few days, then switch to draft-pr.
+autonomy: diagnose
+
+# Copy this cron into .github/workflows/dawnfix.yml as well. Keep it off the hour.
+schedule: "17 * * * *"
+
+sources:
+  - aws:
+      role: "arn:aws:iam::123456789012:role/dawnfix-read"  # RoleArn output of infra/aws/dawnfix-read-role.yaml
+      region: us-east-1
+      log_groups:
+        - my-api-prod
+        - { name: my-worker-prod, stream_prefix: worker }
+      alarms: true                 # alarms currently in ALARM
+      alb: "app/my-lb/*"           # 5xx on matching load balancers and their target groups
+  # - gcp:
+  #     project: my-project-id     # infra/gcp/setup-wif.sh grants roles/logging.viewer here
+  #     filter: 'severity>=ERROR'
+
+rules:
+  - name: ignore scale-in alarms
+    conditions: [ alarm ~= "AlarmLow" ]
+    actions: [ ignore ]
+  - name: payments are critical
+    conditions: [ route ^= "/payments" ]
+    actions: [ severity: critical ]
+
+limits:
+  fix_prs_per_day: 3     # the fix job stops opening PRs after this many per UTC day
+  max_turns: 40          # agent turns per fix run
+  timeout_minutes: 20    # fix job timeout
+  max_events_per_source: 5000
+  max_findings: 50      # at most 150 (the hosted service takes 64 KB per tick)
+
+# The one command the fix agent may run (its only shell permission), e.g. "npm test",
+# "python -m pytest -q", "go test ./...". Plain words only: no quotes, ;, &&, | or $.
+# Leave it out and the fix job can only open issues, never PRs.
+test:
+  command: "npm test"
+
+# true: no log text anywhere (PRs, issues, digest); only fingerprints, counts, route templates.
+phi_mode: false
+
+# Where the diagnose job files its issues: github, or none. (linear and jira are accepted by
+# the config but nothing files to them yet.) The hosted digest email is Dawnfix Enterprise:
+# its recipients are set on the service (hosted/service.sh workspace), not here.
+report:
+  issues: github

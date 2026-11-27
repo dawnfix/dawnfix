@@ -1,0 +1,119 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Source available under the Functional Source License 1.1, ALv2 Future License: see LICENSE
+# at the root of the repo this file comes from.
+# (no brand below on purpose: agencies run this for their clients)
+# Agency fleet collector — goes in the AGENCY's own repo as .github/workflows/fleet-collect.yml,
+# next to fleet.yml. One job per client (matrix), hourly, read-only.
+#
+# Each job: GitHub OIDC -> the agency hub role (infra/aws/fleet-agency-hub-role.yaml) ->
+# `fleet collect` assumes each of the client's read roles with that client's External ID ->
+# summary.json (numbers and enums only, schema/fleet-summary.schema.json) -> POST to the board.
+#
+# Repository settings this needs (none of them have defaults, on purpose):
+#   vars.FLEET_HUB_ROLE_ARN        the hub role's ARN
+#   vars.FLEET_BOARD_URL           https base URL of the board; the job appends /v1/fleet/summary
+#                                  (needed only with FLEET_AGENCY_KEY)
+#   vars.FLEET_COLLECTOR_SPEC      what to pip install: the public repo's fleet/collector/ (and
+#                                  core/) at a pinned ref, a wheel URL, or package==version
+#   secrets.FLEET_AGENCY_KEY       optional: the agency's Enterprise key for the hosted board.
+#                                  Without it the collector runs the same, the summary stays
+#                                  in the job log and nothing is sent anywhere
+#   secrets.FLEET_EXTERNAL_ID_<SLUG>   one per client (GitHub upper-cases secret names)
+#
+# A client that would rather run this in its own Actions uses the same job with its own key,
+# no hub role (OIDC straight into its read role) and no External ID.
+
+name: fleet-collect
+
+on:
+  schedule:
+    - cron: "41 * * * *"   # off the hour
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: fleet-collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        # Client slugs from fleet.yml. Keep in step with it; `fleet validate` lists them.
+        client: [k3m9x2a7b4cd, p7q2r8s4t6uv]
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install the collector
+        env:
+          SPEC: ${{ vars.FLEET_COLLECTOR_SPEC }}
+        run: |
+          if [ -z "$SPEC" ]; then echo "::error::set vars.FLEET_COLLECTOR_SPEC"; exit 1; fi
+          python -m pip install --disable-pip-version-check --quiet "$SPEC"
+          fleet validate --config fleet.yml
+
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.FLEET_HUB_ROLE_ARN }}
+          aws-region: us-east-1
+          role-session-name: fleet-collect
+
+      # Cost Explorer bills $0.01 per request. The collector asks once per account per UTC
+      # day and keeps the answer here; the key has the date in it, so it expires by itself.
+      - name: Today (UTC)
+        id: day
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .fleet-cache
+          key: fleet-spend-${{ matrix.client }}-${{ steps.day.outputs.day }}
+
+      - name: Collect
+        env:
+          FLEET_EXTERNAL_ID: ${{ secrets[format('FLEET_EXTERNAL_ID_{0}', matrix.client)] }}
+        run: fleet collect --client "${{ matrix.client }}" --config fleet.yml --out summary.json --cache-dir .fleet-cache
+
+      # The only thing that leaves: summary.json. Idempotent on (client, run), so curl's
+      # retries and a re-run do not double count. The key is read from stdin, never argv.
+      - name: Send to the board
+        env:
+          BOARD: ${{ vars.FLEET_BOARD_URL }}
+          FLEET_AGENCY_KEY: ${{ secrets.FLEET_AGENCY_KEY }}
+          CLIENT: ${{ matrix.client }}
+        run: |
+          # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
+          need_key="The Fleet board needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
+          say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          if [ -z "$FLEET_AGENCY_KEY" ]; then
+            say_need_key
+            echo "Nothing sent. The summary (numbers and enums only):"
+            jq -c . summary.json
+            exit 0
+          fi
+          case "$BOARD" in https://*) ;; *) echo "::warning::FLEET_BOARD_URL must be an https base URL; nothing sent"; exit 0 ;; esac
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$FLEET_AGENCY_KEY" |
+            curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
+              -K - -X POST "${BOARD%/}/v1/fleet/summary" \
+              -H "Content-Type: application/json" \
+              -H "X-Fleet-Client: $CLIENT" \
+              -H "X-Dawnfix-Run: $GITHUB_RUN_ID" \
+              --data-binary @summary.json -o response.json -w '%{http_code}') || code="${code:-000}"
+          case "$code" in
+            201) echo "board: recorded" ;;
+            200) echo "board: this run was already recorded" ;;
+            401|402|403) say_need_key "::warning::"; echo "board: HTTP $code for this client: $(head -c 300 response.json 2>/dev/null)" ;;
+            *) echo "::warning::board answered HTTP $code: $(head -c 300 response.json 2>/dev/null)"; exit 1 ;;
+          esac
