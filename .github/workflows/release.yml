@@ -204,7 +204,7 @@ jobs:
             echo "::notice::dawnfix@${TAG#v} is on npm already; nothing to publish"
             exit 0
           fi
-          npm publish npm-dist/dawnfix-*.tgz --provenance --access public
+          npm publish ./npm-dist/dawnfix-*.tgz --provenance --access public
 
   # The reusable workflows are called as @v0: point it at this release, now that both
   # packages it installs are published. Same major only (a v1.0.0 tag moves v1).
