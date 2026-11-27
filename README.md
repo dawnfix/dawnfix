@@ -7,7 +7,9 @@ has seen. When one is new, an agent runs with your own AI API key (Claude today)
 GitHub issue with the cause, the impact and a severity, or writes a failing test and the fix
 and opens a draft PR for you to review. It never merges or deploys. Your logs never leave your accounts.
 
-On GitLab, it runs as four jobs in your project's pipeline ([GitLab CI](#gitlab-ci)).
+On GitLab, it runs as four jobs in your project's pipeline ([GitLab CI](#gitlab-ci)). On
+Bitbucket Cloud, it runs in diagnose mode only; fixes need a self-hosted runner
+([Bitbucket Pipelines](#bitbucket-pipelines)).
 
 Free and source available. No key and no plan is needed for anything in this repo.
 
@@ -170,6 +172,87 @@ Hardening:
 
    To run it by hand: Build > Pipelines > Run pipeline with `DAWNFIX_RUN=true`, plus
    `DAWNFIX_DRY_RUN=true` or `DAWNFIX_BASELINE=true`.
+
+## Bitbucket Pipelines
+
+**On Bitbucket Cloud, Dawnfix runs in diagnose mode only.** It reads your logs and files an
+issue. With the repository's issue tracker off, it writes the analysis to the publish step's log
+instead. It does not change code there.
+
+Why: every Pipelines step can push to your repository through Bitbucket's git proxy, with the
+pipeline's own credential. Claude Code's sandbox would keep the agent off that proxy, but it
+cannot start in Bitbucket Cloud's step containers. So `npx dawnfix init --host bitbucket` writes
+a diagnose config, and the agent step refuses the fix modes (plan, draft-pr) wherever the sandbox
+cannot start.
+
+**Fix modes need a self-hosted runner** where the sandbox can start: a Linux runner (the Linux
+Shell runner, or the Docker runner with a seccomp and AppArmor profile that allows it) where bwrap
+can create user and network namespaces (kernel unprivileged user namespaces on), with bubblewrap,
+socat, Node 20 or later and Python 3.11 or later.
+
+**Required on every Bitbucket repository: a push restriction on every branch** that lets only
+the account behind `DAWNFIX_HOST_TOKEN` push. Set it with your own admin token in
+`BITBUCKET_TOKEN`:
+
+```sh
+curl -sS -X POST -H "Authorization: Bearer $BITBUCKET_TOKEN" -H 'Content-Type: application/json' \
+  https://api.bitbucket.org/2.0/repositories/<workspace>/<repo>/branch-restrictions \
+  -d '{"kind":"push","branch_match_kind":"glob","pattern":"*","users":[{"uuid":"{<account UUID>}"}],"groups":[]}'
+```
+
+Or in Repository settings > Branch restrictions > Add: pattern `*`, write access only for that
+account. `npx dawnfix doctor` fails without it (with `BITBUCKET_TOKEN` set, it checks it).
+
+Tags: Bitbucket Cloud cannot restrict who pushes tags (a push restriction on refs/tags/* did not stop one). A tag pushed through the git proxy can carry a new commit whose bitbucket-pipelines.yml runs a tag pipeline with your deployment secrets. In diagnose mode the agent runs no command, so it cannot push anything. That is why Bitbucket Cloud is diagnose only.
+
+Dawnfix runs as a custom pipeline, `dawnfix`, with four steps. Each step is a fresh container
+that holds one secret at most:
+
+- `dawnfix read`: the cloud OIDC token only (`oidc: true`). Reads your logs.
+- `dawnfix agent`: `DAWNFIX_AI_API_KEY` only. It has no clone, runs no git and has no repo
+  token. Its only output is an artifact with the issue texts (and, on a self-hosted runner in a
+  fix mode, the changed files).
+- `dawnfix publish`: `DAWNFIX_HOST_TOKEN` only. It files the issue. In a fix mode it checks the
+  files again in a fresh clone, pushes with `[skip ci]` and opens a draft pull request. It never
+  merges.
+- `dawnfix report`: `DAWNFIX_ENTERPRISE_KEY` only, optional.
+
+Hardening:
+
+- The agent step has `clone: enabled: false`: it gets a copy of the commit without `.git`.
+  Every Bitbucket token and every variable named like a secret is unset before the agent runs,
+  and the agent refuses to start if one is left.
+- In a fix mode, Dawnfix branches are pushed with `[skip ci]` in each commit message, so no pipeline runs on
+  them by itself. Dawnfix never changes CI config: `bitbucket-pipelines.yml` and anything under
+  `.bitbucket/` are refused.
+- Issues only when the repository's issue tracker is on. With it off, the text Dawnfix would
+  file goes to the publish step's log and its artifact.
+
+1. **Init.** `npx dawnfix init --host bitbucket` writes `.dawnfix.yml` (diagnose mode) and the
+   pipeline (or the lines to merge into your `bitbucket-pipelines.yml`), and prints the push
+   restriction, variables, deployments and schedule to set. It never asks for a secret.
+2. **Turn Pipelines on** in Repository settings > Pipelines > Settings.
+3. **Read-only cloud role.** It trusts your workspace's OIDC issuer
+   (`api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc`), the audience
+   `ari:cloud:bitbucket::workspace/<workspace UUID>`, and only your repository's UUID as the
+   subject. AWS: `infra/aws/dawnfix-read-role-bitbucket.yaml` with CloudFormation. GCP:
+   `infra/gcp/setup-wif-bitbucket.sh`, which prints the value for `DAWNFIX_GCP_WIF_PROVIDER`.
+4. **Deployment environments and secrets** (Repository settings > Deployments). Each secret is
+   a secured variable of one environment:
+
+   | Variable | Environment | Type | What |
+   |---|---|---|---|
+   | `DAWNFIX_AI_API_KEY` | `dawnfix-agent` | Test | your AI API key (Claude today) |
+   | `DAWNFIX_HOST_TOKEN` | `dawnfix-publish` | Staging | a repository access token: repository write, pull requests write, pipelines write; or an Atlassian API token with `DAWNFIX_BITBUCKET_EMAIL` |
+   | `DAWNFIX_ENTERPRISE_KEY` | `dawnfix-report` | Production | optional, Enterprise only |
+
+   Never put a secret in repository or workspace variables: those reach every step. Not
+   secret (repository variables): `DAWNFIX_AWS_ROLE_ARN` and `DAWNFIX_AWS_REGION`, or
+   `DAWNFIX_GCP_WIF_PROVIDER`. Each run records a deployment in the three environments.
+
+5. **Schedule.** Repository settings > Pipelines > Schedules: your main branch, the custom
+   pipeline `dawnfix`, hourly. To run it by hand: Pipelines > Run pipeline, custom: dawnfix,
+   with `DAWNFIX_DRY_RUN=true` or `DAWNFIX_BASELINE=true`.
 
 ## What it costs you
 

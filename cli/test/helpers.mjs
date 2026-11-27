@@ -38,6 +38,8 @@ esac
 
 export function run(args, { cwd, path, input } = {}) {
   const env = { ...process.env, NO_COLOR: '1' };
+  delete env.BITBUCKET_TOKEN; // doctor would call the real API with it
+  delete env.BITBUCKET_EMAIL;
   if (path) env.PATH = `${path}:${process.env.PATH}`;
   const p = spawnSync(process.execPath, [BIN, ...args], { cwd, env, encoding: 'utf8', input: input ?? '' });
   return { code: p.status, out: p.stdout, err: p.stderr };
@@ -45,6 +47,13 @@ export function run(args, { cwd, path, input } = {}) {
 
 /** A fresh git repo whose origin is a GitLab project (group/subgroup/project). */
 export function gitlabRepo(files = {}, remote = 'git@gitlab.com:acme/platform/shop-api.git') {
+  const dir = repo(files);
+  execFileSync('git', ['remote', 'set-url', 'origin', remote], { cwd: dir });
+  return dir;
+}
+
+/** A fresh git repo whose origin is a bitbucket.org repository (workspace/repo). */
+export function bitbucketRepo(files = {}, remote = 'git@bitbucket.org:acme/shop-api.git') {
   const dir = repo(files);
   execFileSync('git', ['remote', 'set-url', 'origin', remote], { cwd: dir });
   return dir;

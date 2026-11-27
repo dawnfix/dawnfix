@@ -47,3 +47,19 @@ Notes:
 - `--dry-run` cannot look up the project number, so the printed resource names show
   `PROJECT_NUMBER`.
 - Checked with `shellcheck` 0.11.0 (clean) and dry runs; it has not been run against a real project.
+
+## Bitbucket Pipelines
+
+`setup-wif-bitbucket.sh` does the same for the `dawnfix read` step of one Bitbucket repository:
+
+```sh
+infra/gcp/setup-wif-bitbucket.sh --dry-run --branch main my-workspace <workspace uuid> '{<repository uuid>}' my-project-id
+```
+
+Arguments: `WORKSPACE WORKSPACE_UUID REPOSITORY_UUID PROJECT_ID [POOL=dawnfix] [PROVIDER=bitbucket]`.
+The issuer is `https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc`,
+the allowed audience `ari:cloud:bitbucket::workspace/<uuid>`; the mapping takes `repositoryUuid`,
+`branchName` and `workspaceUuid` from the token, and the condition requires the repository UUID and
+the branch (default `main`). The role is granted to
+`principalSet://.../attribute.repository_uuid/{<repository uuid>}`. The provider name goes in the
+repository variable `DAWNFIX_GCP_WIF_PROVIDER` (not secret).

@@ -39,7 +39,7 @@
 # only when DAWNFIX_RUN is "true", so your other pipelines are untouched.
 
 variables:
-  DAWNFIX_VERSION: "0.4.0"
+  DAWNFIX_VERSION: "0.5.0"
   DAWNFIX_PIP_SPEC: ""          # default dawnfix==$DAWNFIX_VERSION (a wheel URL for a test build)
   DAWNFIX_AUTONOMY: ""          # overrides .dawnfix.yml: diagnose | plan | draft-pr
   DAWNFIX_AI_MODEL: ""          # default sonnet
@@ -122,7 +122,11 @@ dawnfix-agent:
       mkdir -p "$DAWNFIX_WORKDIR" && tar -xf .dawnfix-out/source/source.tar -C "$DAWNFIX_WORKDIR" --no-same-owner
       # No CI credential reaches the agent: every CI token, password and credentialed URL goes
       # before anything else runs (dawnfix run agent --isolation job refuses to start otherwise).
-      for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | grep -E '^CI_[A-Za-z0-9_]*(TOKEN|PASSWORD|JWT)|PASSWORD|^CI_REPOSITORY_URL$|^GIT_ASKPASS$|^SSH_ASKPASS$|^GIT_CONFIG_'); do unset "$v"; done
+      # SSH credentials (a deploy key a before_script or the image put there, an agent).
+      rm -rf ~/.ssh; unset SSH_AUTH_SOCK
+      # Any other variable named like a secret goes too (project variables without an environment
+      # scope reach every job); the AI key is the one this job is for.
+      for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | grep -iE '^CI_[A-Za-z0-9_]*(TOKEN|PASSWORD|JWT)|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|(API|PRIVATE|ACCESS|AUTH)_?KEY|^CI_REPOSITORY_URL$|^GIT_ASKPASS$|^SSH_ASKPASS$|^GIT_CONFIG_' | grep -vxE 'DAWNFIX_AI_API_KEY|ANTHROPIC_API_KEY'); do unset "$v"; done
     - *dawnfix-install
     - |
       if [ -n "$DAWNFIX_INSTALL_COMMAND" ] && [ "$mode" = fix ]; then (cd "$DAWNFIX_WORKDIR" && sh -c "$DAWNFIX_INSTALL_COMMAND"); fi

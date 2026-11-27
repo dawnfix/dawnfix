@@ -14,6 +14,29 @@ repository** can assume through GitHub OIDC. No access keys exist anywhere.
 
 Nothing else: no S3, no Secrets Manager, no SSM, no writes of any kind.
 
+## Bitbucket Pipelines
+
+`dawnfix-read-role-bitbucket.yaml` is the same read-only role for the `dawnfix read` step of one
+Bitbucket repository (Bitbucket Pipelines OIDC, `oidc: true` on the step).
+
+```sh
+aws cloudformation deploy --template-file dawnfix-read-role-bitbucket.yaml \
+  --stack-name dawnfix-read-my-app --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides Workspace=my-workspace WorkspaceUuid=<uuid, no braces> \
+    RepositoryUuid='{<uuid>}' CreateOIDCProvider=true RoleName=dawnfix-read-my-app LogGroupPrefix='*'
+```
+
+- Issuer `https://api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc`
+  (one provider per workspace per account), audience `ari:cloud:bitbucket::workspace/<uuid>`;
+  both are shown in Repository settings > Pipelines > OpenID Connect.
+- Trust: `aud` equals that audience and `sub` is like `{<repository uuid>}:*`. Bitbucket's `sub`
+  holds no branch, and IAM can only condition on `aud` and `sub` here, so every pipeline of the
+  repository can assume the role (anyone with write access can run one). Tighter: give the read
+  step a deployment environment and set `EnvironmentUuid`; `sub` must then be
+  `{<repository uuid>}:{<environment uuid>}:*`.
+- The policy is the GitHub role's, unchanged. `RoleArn` goes in the repository variable
+  `DAWNFIX_AWS_ROLE_ARN` (not secret).
+
 ## One OIDC provider per account
 
 An AWS account can hold only one IAM OIDC provider for `token.actions.githubusercontent.com`.

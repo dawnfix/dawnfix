@@ -104,7 +104,7 @@ permissions: {}
 # This release of github.com/dawnfix/dawnfix: the job installs dawnfix==DAWNFIX_VERSION (core
 # and receipt) from PyPI. CORE_REF is the fallback: a tag or commit SHA to install from git.
 env:
-  DAWNFIX_VERSION: "0.4.0"
+  DAWNFIX_VERSION: "0.5.0"
   CORE_REF: ${{ inputs.core-ref }}
 
 jobs:

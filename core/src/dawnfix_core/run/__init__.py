@@ -7,7 +7,7 @@ as four commands, each meant for its own CI job holding only the secret it needs
                         committed, pushed to an explicit URL, a draft PR/MR or an issue
   dawnfix run report    the Enterprise key only: the optional hosted summary and PR state
 
-The repo host (GitHub and GitLab; Bitbucket is coming soon) is reached through a
+The repo host (GitHub, GitLab or Bitbucket Cloud) is reached through a
 HostAdapter (hosts/). The GitHub Actions reusable workflow stays the way to run Dawnfix on
 GitHub Actions; this engine is for other CI systems.
 """

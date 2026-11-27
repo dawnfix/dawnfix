@@ -78,7 +78,7 @@ test('no secret ever goes on a command line, and init has no secret flags', () =
     if (/DAWNFIX_(AI_API_KEY|HOST_TOKEN|ENTERPRISE_KEY)/.test(line)) assert.doesNotMatch(line, /--value|-v /, line);
   }
   const help = run(['init', '--help']).out;
-  assert.match(help, /--host github\|gitlab/);
+  assert.match(help, /--host github\|gitlab\|bitbucket/);
   assert.doesNotMatch(help, /--(ai-api-key|api-key|token|host-token|enterprise-key|secret)\b/);
   const bad = run([...INIT, '--host-token', 'glpat-xyz'], { cwd: gitlabRepo() });
   assert.equal(bad.code, 2);
@@ -137,14 +137,7 @@ test('a symlinked .gitlab-ci.yml is refused and nothing is written', () => {
 test('--host: bad values, GitHub-only flags, and GitHub stays the default for a GitHub remote', () => {
   const bad = run(['init', '--dry-run', '--host', 'circleci', '--log-group', 'a'], { cwd: repo() });
   assert.equal(bad.code, 2);
-  assert.match(bad.err, /--host must be github or gitlab/);
-  // Bitbucket is not in this release: a plain "coming soon", non-zero, nothing written.
-  const bbDir = repo();
-  const bb = run(['init', '--host', 'bitbucket', '--log-group', 'a'], { cwd: bbDir });
-  assert.notEqual(bb.code, 0);
-  assert.match(bb.err, /Bitbucket support is coming soon/);
-  assert.doesNotMatch(bb.out, /bitbucket-pipelines/);
-  assert.ok(!existsSync(join(bbDir, '.dawnfix.yml')));
+  assert.match(bad.err, /--host must be github, gitlab or bitbucket/);
   assert.match(run(['init', '--dry-run', '--log-group', 'a', '--ref', 'v0'], { cwd: gitlabRepo() }).err, /--ref is for GitHub/);
   const gh = run(['init', '--dry-run', '--log-group', 'a'], { cwd: repo() });
   assert.match(gh.out, /--- \.github\/workflows\/dawnfix\.yml/);

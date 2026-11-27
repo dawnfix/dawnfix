@@ -1,6 +1,6 @@
 {
   "name": "dawnfix",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Dawnfix, the AI SRE that runs in your own GitHub Actions: `npx dawnfix init` sets it up in a repo, `npx dawnfix doctor` checks the setup, `npx dawnfix flare` audits Cloudflare. One file, no dependencies.",
   "keywords": [
     "ai-sre",

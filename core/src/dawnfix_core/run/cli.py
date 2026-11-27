@@ -18,10 +18,7 @@ from .stages import HOST_TOKEN, StageError, check_stage_env, register_secrets
 from .web import Http
 
 # The CI systems where each job is a fresh container, so a stage can be isolated by its job.
-JOB_ISOLATION_CI = ("gitlab-ci",)
-# Bitbucket is not in this release: Pipelines' credential-less git proxy would let any step push,
-# the agent's step included. Every stage refuses it until a network restriction is proven.
-COMING_SOON = "Bitbucket support is coming soon"
+JOB_ISOLATION_CI = ("gitlab-ci", "bitbucket-pipelines")
 
 
 def parser() -> argparse.ArgumentParser:
@@ -46,7 +43,7 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--claude-bin", help="a claude executable instead of the pinned npx package")
     a.add_argument("--isolation", choices=["namespace", "job"], default="namespace",
                    help="namespace (default): the agent contained in a PID namespace or cgroup, its changes "
-                        "captured with git. job: GitLab CI only, where this stage is its "
+                        "captured with git. job: GitLab CI and Bitbucket Pipelines only, where this stage is its "
                         "own fresh container: no containment, no git; the changed files are exported for the "
                         "publish job to check")
     u = sub.add_parser("publish", help="validate, commit, push, open a draft PR or issue (the host token only)")
@@ -76,8 +73,6 @@ def main(argv=None, *, env=None, http=None, sources=None, push_env=None) -> int:
         if args.stage == "context":
             print(json.dumps(ctx.as_dict(), indent=2))
             return 0
-        if ctx.provider == "bitbucket-pipelines" or ctx.repo_host == "bitbucket":
-            raise StageError(COMING_SOON)
         check_stage_env(args.stage, env)
         if args.stage == "read":
             if sources is None:
@@ -90,19 +85,22 @@ def main(argv=None, *, env=None, http=None, sources=None, push_env=None) -> int:
             if args.isolation == "job" and ctx.provider not in JOB_ISOLATION_CI:
                 raise StageError(
                     f"--isolation job is only for a CI that runs each stage in its own fresh container "
-                    f"(GitLab CI), not {ctx.provider}: there the agent stage needs its "
+                    f"(GitLab CI, Bitbucket Pipelines), not {ctx.provider}: there the agent stage needs its "
                     "PID namespace (the default)")
             claude = [args.claude_bin] if args.claude_bin else ([env["DAWNFIX_CLAUDE_BIN"]] if env.get("DAWNFIX_CLAUDE_BIN") else None)
             return run_agent(mode=args.mode, workdir=d, findings=Path(args.findings), out_dir=Path(args.out),
                              config_path=Path(args.config) if args.config else d / ".dawnfix.yml", env=env, http=http,
                              claude_cmd=claude, budget=args.budget, pass_env=args.pass_env,
-                             isolation=args.isolation, base_commit=ctx.commit)
+                             isolation=args.isolation, base_commit=ctx.commit,
+                             require_network_sandbox=ctx.provider == "bitbucket-pipelines")
         if args.stage == "publish":
             token = env.get(HOST_TOKEN, "")
             if not token:
                 raise StageError(f"no repo host token: set {HOST_TOKEN} in this job only (contents and pull or "
                                  "merge requests write, issues write, this repo only)")
-            host = adapter_for(ctx, token, http)
+            # DAWNFIX_BITBUCKET_EMAIL (not secret): the token is an Atlassian API token of that account
+            # (Basic auth). Without it a Bitbucket token is an access token (Bearer).
+            host = adapter_for(ctx, token, http, bitbucket_email=env.get("DAWNFIX_BITBUCKET_EMAIL", ""))
             return run_publish(checkout=Path(args.dir), artifact=Path(args.artifact), findings_path=Path(args.findings),
                                out_dir=Path(args.out), host=host, token=token, push_env=push_env,
                                autonomy=env.get("DAWNFIX_AUTONOMY", ""), isolation=args.isolation)

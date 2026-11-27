@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix"
-version = "0.4.0"
+version = "0.5.0"
 description = "Dawnfix, the AI SRE that runs in your own GitHub Actions: the read-only production log check (dawnfix) and the free tools logbill, parity, sweeper, leastpriv, receipt and fleet. Your logs stay in your accounts."
 readme = "README.md"
 requires-python = ">=3.11"

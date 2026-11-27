@@ -1,6 +1,6 @@
 """The GitHub adapter: dedupe like the workflow (dawnfix/<fp> PR in any state, open dawnfix
 issue with the fingerprint in its title), draft PRs only, labels, the daily count, the push URL.
-Bitbucket is a stub, coming soon; GitLab has its own tests (test_run_gitlab.py)."""
+GitLab and Bitbucket have their own tests (test_run_gitlab.py, test_run_bitbucket.py)."""
 from datetime import datetime, timezone
 
 import pytest
@@ -171,19 +171,21 @@ def test_a_redirect_to_another_host_is_refused_and_not_followed():
         Http().request("GET", "http://example.com")
 
 
-@pytest.mark.parametrize("cls, host", [(BitbucketAdapter, "bitbucket")])
-def test_bitbucket_is_coming_soon(cls, host):
-    a = adapter_for(detect({"DAWNFIX_REPO": "o/r", "DAWNFIX_REPO_HOST": host}), "t", FakeHttp())
-    assert isinstance(a, cls) and isinstance(a, NotImplementedAdapter) and isinstance(a, HostAdapter)
+def test_a_not_implemented_host_says_so_on_every_call():
+    class Later(NotImplementedAdapter):
+        name = "Later"
+    a = Later(detect({"DAWNFIX_REPO": "o/r", "DAWNFIX_REPO_HOST": "github"}), "t", FakeHttp())
+    assert isinstance(a, HostAdapter)
     for call in (lambda: a.default_branch(), lambda: a.find_existing(FP), lambda: a.open_draft_change("b", "t", "x"),
                  lambda: a.open_issue("t", "b", ("dawnfix",)), lambda: a.push_url("t"), lambda: a.changes_opened_today()):
-        with pytest.raises(HostError, match="Bitbucket support is coming soon"):
+        with pytest.raises(HostError, match="phase 2"):
             call()
 
 
-def test_gitlab_is_implemented():
-    a = adapter_for(detect({"DAWNFIX_REPO": "o/r", "DAWNFIX_REPO_HOST": "gitlab"}), "t", FakeHttp())
-    assert isinstance(a, GitLabAdapter) and not isinstance(a, NotImplementedAdapter)
+@pytest.mark.parametrize("cls, host", [(GitLabAdapter, "gitlab"), (BitbucketAdapter, "bitbucket")])
+def test_gitlab_and_bitbucket_are_implemented(cls, host):
+    a = adapter_for(detect({"DAWNFIX_REPO": "o/r", "DAWNFIX_REPO_HOST": host}), "t", FakeHttp())
+    assert isinstance(a, cls) and not isinstance(a, NotImplementedAdapter)
 
 
 def test_unknown_host():

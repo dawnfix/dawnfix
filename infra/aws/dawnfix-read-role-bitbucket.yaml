@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Dawnfix read-only role for Bitbucket Pipelines. Lets one Bitbucket repository's dawnfix read
+  step read CloudWatch Logs, alarms, metrics and load balancer health through Bitbucket OIDC
+  (oidc: true). No write actions, no long-lived keys.
+
+# The trust, honestly: Bitbucket's OIDC token names no branch in `sub`
+# ({repository uuid}[:{environment uuid}]:{step uuid}), and IAM conditions on a custom OIDC
+# provider can use only aud and sub. So this role trusts every pipeline of the repository, and
+# anyone with write access to it can run one. For a tighter trust, give the read step a
+# deployment environment and set EnvironmentUuid: only steps in that environment can then assume
+# the role. The condition keys name the per-workspace issuer, so the trust policy is a JSON
+# string built with Fn::Sub.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Bitbucket repository allowed to assume the role" }
+        Parameters: [Workspace, WorkspaceUuid, RepositoryUuid, EnvironmentUuid]
+      - Label: { default: "Bitbucket OIDC provider (one per workspace per AWS account)" }
+        Parameters: [CreateOIDCProvider, ExistingOIDCProviderArn]
+      - Label: { default: "Scope" }
+        Parameters: [RoleName, LogGroupPrefix]
+
+Parameters:
+  Workspace:
+    Type: String
+    Description: The workspace slug (BITBUCKET_WORKSPACE). Bitbucket's OIDC issuer is per workspace.
+    AllowedPattern: "^[A-Za-z0-9_.-]{1,100}$"
+  WorkspaceUuid:
+    Type: String
+    Description: >-
+      The workspace UUID without braces. The audience is ari:cloud:bitbucket::workspace/<this uuid>
+      (Repository settings > Pipelines > OpenID Connect shows it).
+    AllowedPattern: "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+  RepositoryUuid:
+    Type: String
+    Description: The repository UUID with its braces, e.g. {555a99ae-...} (BITBUCKET_REPO_UUID).
+    AllowedPattern: "^\\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\}$"
+  EnvironmentUuid:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional: a deployment environment UUID with its braces. When set, only steps in that
+      deployment environment may assume the role.
+    AllowedPattern: "^(\\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\})?$"
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: An account holds one provider per Bitbucket workspace. Choose false if it exists and give its ARN below.
+  ExistingOIDCProviderArn:
+    Type: String
+    Default: ""
+    Description: "arn:aws:iam::<account>:oidc-provider/api.bitbucket.org/2.0/workspaces/<workspace>/pipelines-config/identity/oidc (only when CreateOIDCProvider is false)."
+  RoleName:
+    Type: String
+    Default: dawnfix-read
+    Description: Name of the role. Use a different name per repository when one account serves several.
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+  LogGroupPrefix:
+    Type: String
+    Default: "*"
+    Description: >-
+      Log groups the role may read, as a name pattern ending in * (for example "ecs-*").
+      The default "*" allows every log group in the account.
+    AllowedPattern: "^[A-Za-z0-9_./#-]*\\*$"
+    ConstraintDescription: must be a log group name prefix ending in *
+
+Rules:
+  ExistingProviderGiven:
+    RuleCondition: !Equals [!Ref CreateOIDCProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOIDCProviderArn, ""]]
+        AssertDescription: ExistingOIDCProviderArn is required when CreateOIDCProvider is false.
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+  AnyEnvironment: !Equals [!Ref EnvironmentUuid, ""]
+
+Resources:
+  BitbucketOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: !Sub "https://api.bitbucket.org/2.0/workspaces/${Workspace}/pipelines-config/identity/oidc"
+      ClientIdList: [!Sub "ari:cloud:bitbucket::workspace/${WorkspaceUuid}"]
+      ThumbprintList: [a031c46782e6e6c662c2c87c76da9aa62ccabd8e]
+
+  ReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Dawnfix read-only access to logs, alarms, metrics and ALB health (Bitbucket OIDC).
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument: !Sub
+        - |
+          {
+            "Version": "2012-10-17",
+            "Statement": [{
+              "Sid": "BitbucketOIDCThisRepositoryOnly",
+              "Effect": "Allow",
+              "Principal": {"Federated": "${ProviderArn}"},
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {"api.bitbucket.org/2.0/workspaces/${Workspace}/pipelines-config/identity/oidc:aud": "ari:cloud:bitbucket::workspace/${WorkspaceUuid}"},
+                "StringLike": {"api.bitbucket.org/2.0/workspaces/${Workspace}/pipelines-config/identity/oidc:sub": "${SubPattern}"}
+              }
+            }]
+          }
+        - ProviderArn: !If [CreateProvider, !Ref BitbucketOIDCProvider, !Ref ExistingOIDCProviderArn]
+          SubPattern: !If [AnyEnvironment, !Sub "${RepositoryUuid}:*", !Sub "${RepositoryUuid}:${EnvironmentUuid}:*"]
+      Policies:
+        - PolicyName: dawnfix-read-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadLogEventsInScope
+                Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                  - logs:StartQuery
+                # Covers both log-group:NAME and log-group:NAME:log-stream:* forms.
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:${LogGroupPrefix}"
+              - Sid: DescribeAndQueryResults
+                Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:StopQuery
+                  - logs:GetQueryResults
+                Resource: "*"
+              - Sid: AlarmsAndMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: "*"
+              - Sid: LoadBalancerHealth
+                Effect: Allow
+                Action:
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: "*"
+      Tags:
+        - Key: managed-by
+          Value: dawnfix
+
+Outputs:
+  RoleArn:
+    Description: Set it as the repository variable DAWNFIX_AWS_ROLE_ARN.
+    Value: !GetAtt ReadRole.Arn
+  OIDCProviderArn:
+    Description: The Bitbucket OIDC provider the role trusts.
+    Value: !If [CreateProvider, !Ref BitbucketOIDCProvider, !Ref ExistingOIDCProviderArn]

@@ -1,4 +1,4 @@
-"""Job isolation (GitLab CI): the agent job runs no git and exports only
+"""Job isolation (GitLab CI, Bitbucket Pipelines): the agent job runs no git and exports only
 files; the publish job builds the patch itself in a fresh clone and applies every validation.
 The agent job can never produce a git-applied change that publish did not check: whatever it
 writes (a patch, CI config, a symlink, a binary, a .git path, a forged changes.json), the
@@ -224,7 +224,7 @@ def test_the_namespace_mode_still_requires_containment(s, monkeypatch):
 
 
 @pytest.mark.parametrize("env, ok", [
-    ({"GITLAB_CI": "true"}, True),
+    ({"GITLAB_CI": "true"}, True), ({"BITBUCKET_BUILD_NUMBER": "3"}, True),
     ({"GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": "o/r"}, False), ({"CIRCLECI": "true"}, False), ({}, False)])
 def test_isolation_job_only_where_each_job_is_a_fresh_container(s, env, ok, capsys, monkeypatch):
     seen = {}
@@ -236,29 +236,6 @@ def test_isolation_job_only_where_each_job_is_a_fresh_container(s, env, ok, caps
     else:
         assert rc == 2 and "only for a CI that runs each stage in its own fresh container" in capsys.readouterr().err
         assert not seen
-
-
-# Bitbucket is not in this release: Pipelines' git proxy would let the agent's step push.
-@pytest.mark.parametrize("stage", [
-    ["read", "--state", "s.json"],
-    ["agent", "--mode", "fix", "--isolation", "job", "--findings", "f.json", "--out", "o"],
-    ["agent", "--mode", "diagnose", "--findings", "f.json", "--out", "o"],
-    ["publish", "--artifact", "a", "--findings", "f.json"],
-    ["report"],
-])
-@pytest.mark.parametrize("env", [
-    {"BITBUCKET_BUILD_NUMBER": "3", "BITBUCKET_REPO_FULL_NAME": "o/r"},
-    {"GITLAB_CI": "true", "DAWNFIX_REPO_HOST": "bitbucket", "DAWNFIX_REPO": "o/r"},
-    {"DAWNFIX_REPO_HOST": "bitbucket", "DAWNFIX_REPO": "o/r"},
-])
-def test_bitbucket_is_coming_soon_at_every_stage(stage, env, capsys, monkeypatch):
-    called = []
-    for name in ("run_read", "run_agent", "run_publish", "run_report"):
-        monkeypatch.setattr(f"dawnfix_core.run.cli.{name}", lambda **kw: called.append(kw) or 0)
-    rc = run_main(stage, env={**env, "DAWNFIX_AI_API_KEY": AI_KEY, "DAWNFIX_HOST_TOKEN": "t"})
-    assert rc != 0
-    assert "Bitbucket support is coming soon" in capsys.readouterr().err
-    assert not called
 
 
 # --- publish: the only place a change is applied ---------------------------------------------
@@ -417,7 +394,7 @@ def test_the_agent_job_refuses_a_git_dir_or_a_credential_helper(s, monkeypatch):
     (home / ".git-credentials").write_text("https://u:p@gitlab.com\n")
     with pytest.raises(AgentError, match=".git-credentials exists"):
         go()
-    assert agent.job_isolation_refusals({}, s["tmp"] / "nowhere", system_gitconfig=s["tmp"] / "none") == []
+    assert agent.job_isolation_refusals({"HOME": str(s["tmp"] / "nohome")}, s["tmp"] / "nowhere", system_gitconfig=s["tmp"] / "none") == []
 
 
 def test_the_branch_is_pushed_with_ci_skip(s):
@@ -501,8 +478,95 @@ def test_the_custom_ci_config_path_and_its_includes(s):
     refuse_ci_includes(s["origin"], s["base"], ["pipelines/part.yml"], ("ci.yml@grp/other",))
 
 
+def test_the_agent_job_refuses_bitbucket_tokens_and_any_secret_named_variable(s):
+    nowhere, none = s["tmp"] / "nowhere", s["tmp"] / "none"
+    for name in ("BITBUCKET_STEP_OIDC_TOKEN", "BITBUCKET_ACCESS_TOKEN", "BITBUCKET_PIPELINES_TOKEN", "NPM_TOKEN",
+                 "SENTRY_AUTH_TOKEN", "DB_PASSWORD", "STRIPE_SECRET", "OPENAI_API_KEY", "DEPLOY_PRIVATE_KEY",
+                 "AWS_ACCESS_KEY_ID", "GOOGLE_CREDENTIALS"):
+        why = agent.job_isolation_refusals({name: "v", "HOME": str(nowhere)}, nowhere, system_gitconfig=none)
+        assert why and name in why[0], name
+    # The AI key is the one secret the agent job is for; image variables like GPG_KEY are not secrets.
+    for name in ("DAWNFIX_AI_API_KEY", "ANTHROPIC_API_KEY", "GPG_KEY", "BITBUCKET_COMMIT", "BITBUCKET_GIT_HTTP_ORIGIN"):
+        assert agent.job_isolation_refusals({name: "https://bitbucket.org/a/b", "HOME": str(nowhere)}, nowhere, system_gitconfig=none) == [], name
+
+
+def test_the_agent_job_refuses_every_ssh_credential_left(s, monkeypatch):
+    home, pssh = s["tmp"] / "h", s["tmp"] / "pipelines-ssh"
+    monkeypatch.setattr(agent, "PIPELINES_SSH_DIR", pssh)
+    go = lambda env=None: agent.ssh_refusals({**(env or {})}, home, pssh)
+    assert go() == []
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh" / "known_hosts").write_text("bitbucket.org ssh-ed25519 AAAA\n")
+    (home / ".ssh" / "id_ed25519.pub").write_text("ssh-ed25519 AAAA")
+    assert go() == []
+    # SSH_AUTH_SOCK
+    assert "SSH_AUTH_SOCK" in go({"SSH_AUTH_SOCK": "/tmp/agent.sock"})[0]
+    # any non-empty file in the pipelines ssh directory, whatever its name
+    pssh.mkdir()
+    (pssh / "known").write_text("")
+    (pssh / "..2026_11_27").mkdir()
+    (pssh / "..2026_11_27" / "known_hosts").write_text("bitbucket.org ssh-rsa AAAA\n")
+    assert go() == []
+    (pssh / "anything").write_text("x")
+    assert "holds files" in go()[0]
+    (pssh / "anything").unlink()
+    # BITBUCKET_SSH_KEY_FILE naming an existing file
+    kf = s["tmp"] / "kf"
+    kf.write_text("")
+    assert "BITBUCKET_SSH_KEY_FILE" in go({"BITBUCKET_SSH_KEY_FILE": str(kf)})[0]
+    assert go({"BITBUCKET_SSH_KEY_FILE": str(s["tmp"] / "gone")}) == []
+    # a private-key header in any file under ~/.ssh, whatever its name
+    (home / ".ssh" / "notes.txt").write_text("x\n" + "-----BEGIN OPENSSH " + "PRIVATE KEY-----\nb3Blbn\n")
+    assert "holds a private key" in go()[0]
+    (home / ".ssh" / "notes.txt").write_text("-----BEGIN RSA " + "PRIVATE KEY-----\n")
+    assert "holds a private key" in go()[0]
+    (home / ".ssh" / "notes.txt").unlink()
+    # an IdentityFile named in ~/.ssh/config that exists anywhere
+    ident = s["tmp"] / "deploy-key"
+    ident.write_text("not a key header")
+    (home / ".ssh" / "config").write_text(f"Host bitbucket.org\n  IdentityFile {ident}\n")
+    assert "an IdentityFile" in go()[0]
+    ident.unlink()
+    assert go() == []
+    # and through the agent job's own check
+    why = agent.job_isolation_refusals({"HOME": str(home), "SSH_AUTH_SOCK": "/x"}, s["tmp"] / "nowhere",
+                                       system_gitconfig=s["tmp"] / "none")
+    assert any("SSH_AUTH_SOCK" in w for w in why)
+
+
 def test_the_sandbox_probe_says_whether_bwrap_can_start():
     assert "not installed" in agent.sandbox_probe(which=lambda n: None)
     assert "can create namespaces" in agent.sandbox_probe(which=lambda n: "/usr/bin/bwrap", probe=lambda c: True)
     line = agent.sandbox_probe(which=lambda n: "/usr/bin/bwrap", probe=lambda c: False)
     assert "cannot create namespaces" in line and "Bash tool is refused" in line
+
+
+def test_bitbucket_needs_the_network_sandbox_in_fix_mode():
+    settings = agent.tools("fix", "python3 -m unittest")[2]
+    ok = lambda cmd: True
+    assert agent.network_sandbox_refusal("fix", settings, which=lambda n: "/usr/bin/bwrap", probe=ok) == ""
+    assert agent.network_sandbox_refusal("diagnose", {}, which=lambda n: None) == ""  # no command runs
+    assert "not installed" in agent.network_sandbox_refusal("fix", settings, which=lambda n: None)
+    seen = []
+    why = agent.network_sandbox_refusal("fix", settings, which=lambda n: "/usr/bin/bwrap",
+                                        probe=lambda cmd: seen.append(cmd) or False)
+    assert "cannot create user and network namespaces" in why and "--unshare-net" in seen[0]
+    import copy
+    loose = copy.deepcopy(settings)
+    loose["sandbox"]["failIfUnavailable"] = False
+    assert "not required" in agent.network_sandbox_refusal("fix", loose, which=lambda n: "/b", probe=ok)
+    local = copy.deepcopy(settings)
+    local["sandbox"]["network"]["allowedDomains"].append("localhost")
+    assert "local host" in agent.network_sandbox_refusal("fix", local, which=lambda n: "/b", probe=ok)
+
+
+@pytest.mark.parametrize("mode, line", [("fix", "required on Bitbucket Pipelines and able to start"),
+                                        ("diagnose", "not needed in diagnose mode")])
+def test_bitbucket_sandbox_line_says_what_the_mode_checked(s, mode, line, capsys, monkeypatch):
+    monkeypatch.setattr(agent, "network_sandbox_refusal", lambda *a, **k: "")
+    monkeypatch.setattr(agent, "job_isolation_refusals", lambda *a, **k: ["stop here"])
+    with pytest.raises(AgentError):
+        run_agent(mode=mode, workdir=s["work"], findings=s["findings"], out_dir=s["tmp"] / "o",
+                  config_path=s["work"] / ".dawnfix.yml", env={**s["env"]}, http=s["http"], isolation="job",
+                  require_network_sandbox=True)
+    assert line in capsys.readouterr().err

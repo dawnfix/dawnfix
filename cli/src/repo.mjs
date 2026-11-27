@@ -33,15 +33,22 @@ export function gitlabFromRemote(url) {
   return { host, path };
 }
 
+/** { workspace, slug } of a bitbucket.org remote URL (https, ssh or git@), or null. */
+export function bitbucketFromRemote(url) {
+  const m = /^(?:[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?|(?:[^@/]+@)?)bitbucket\.org(?::\d+)?[:/]+([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/i.exec(String(url || '').trim());
+  return m ? { workspace: m[1], slug: m[2] } : null;
+}
+
 export function detectRepo(cwd) {
   const root = git(cwd, 'rev-parse', '--show-toplevel');
   if (!root) return null;
   const origin = git(root, 'remote', 'get-url', 'origin');
   const slug = slugFromRemote(origin);
   const gitlab = slug ? null : gitlabFromRemote(origin);
+  const bitbucket = slug || gitlab ? null : bitbucketFromRemote(origin);
   const head = git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '');
   const branch = head || git(root, 'symbolic-ref', '--short', 'HEAD') || 'main';
-  return { root, slug, gitlab, branch };
+  return { root, slug, gitlab, bitbucket, branch };
 }
 
 /** Best guesses for test.command and the install command, from the files at the repo root. */

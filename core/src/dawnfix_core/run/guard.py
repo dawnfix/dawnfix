@@ -191,5 +191,16 @@ class GuardedHost(HostAdapter):
     def push_options(self):
         return self.inner.push_options
 
+    @property
+    def commit_note(self):
+        return self.inner.commit_note
+
+    @property
+    def auth_values(self):
+        return self.inner.auth_values
+
+    def issues_enabled(self):
+        return self.inner.issues_enabled()
+
     def ci_context(self):
         return self.inner.ci_context()

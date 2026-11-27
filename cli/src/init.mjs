@@ -1,6 +1,6 @@
 // npx dawnfix init: writes .dawnfix.yml and a short caller of the reusable workflow (GitHub),
-// or a .gitlab-ci.yml that includes the release's template (GitLab), after showing both in
-// full. Never asks for, reads or writes a secret: it prints the `gh secret set` (or
+// or a .gitlab-ci.yml that includes the release's template (GitLab), or bitbucket-pipelines.yml
+// (Bitbucket, the release's template), after showing them in full. Never asks for, reads or writes a secret: it prints the `gh secret set` (or
 // `glab variable set`) lines for the user to run.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,6 +8,7 @@ import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import CONFIG_SCHEMA from '../../core/schema/config.schema.json';
+import { BB_DIAGNOSE_ONLY, BB_FIX_REFUSED, bitbucketNextSteps, FILE as BB_FILE, hasDawnfix as bbHasDawnfix, snippet as bbSnippet, TEMPLATE as BB_TEMPLATE } from './bitbucket.mjs';
 import { gitlabNextSteps, hasDawnfix, includeSnippet, renderGitlabCi } from './gitlab.mjs';
 import { detectCommands, detectRepo } from './repo.mjs';
 import { checkTarget, safeWrite, UnsafePath } from './safe-write.mjs';
@@ -17,7 +18,8 @@ import { MAJOR_REF, RAW, REPO_URL, TAG, VERSION } from './version.mjs';
 export const INIT_HELP = `Usage: dawnfix init [options]
 
 Sets Dawnfix up in the git repo you are in: shows .dawnfix.yml and
-.github/workflows/dawnfix.yml (GitHub) or .gitlab-ci.yml (GitLab) in full, writes them
+.github/workflows/dawnfix.yml (GitHub), .gitlab-ci.yml (GitLab) or
+bitbucket-pipelines.yml (Bitbucket) in full, writes them
 when you confirm (or with --yes), and prints the commands you run next (the read-only
 cloud role, gh secret set or glab variable set). It never asks for a secret and never
 writes one.
@@ -26,9 +28,15 @@ GitLab: .gitlab-ci.yml includes the template of this release, pinned with its sh
 integrity. An existing .gitlab-ci.yml is never changed (not even with --force): init
 writes .dawnfix.yml and prints the include lines to paste.
 
+Bitbucket: bitbucket-pipelines.yml is the template of this release (a custom pipeline
+"dawnfix" for a schedule; Bitbucket has no remote include). An existing
+bitbucket-pipelines.yml is never changed (not even with --force): init writes .dawnfix.yml
+and prints the part to merge into it.
+
 Options:
-  --host github|gitlab       Where the repo and CI are (default github; gitlab when
-                             origin is a GitLab remote)
+  --host github|gitlab|bitbucket
+                             Where the repo and CI are (default github; gitlab or
+                             bitbucket when origin is a GitLab or bitbucket.org remote)
   --cloud aws|gcp            Where the logs are (asked if missing; default aws)
   --aws-region REGION        Region of the log groups (default us-east-1)
   --log-group NAME           CloudWatch log group to watch (repeatable)
@@ -36,7 +44,10 @@ Options:
   --aws-role-arn ARN         The read-only role, if it exists already (else a repo variable)
   --gcp-project ID           GCP project whose Cloud Logging is read
   --gcp-wif-provider NAME    Workload identity provider, if it exists already (else a repo variable)
-  --autonomy LEVEL           diagnose | plan | draft-pr (default diagnose: issues only)
+  --autonomy LEVEL           diagnose | plan | draft-pr (default diagnose: issues only;
+                             on Bitbucket Cloud diagnose is the only mode)
+  --self-hosted-runner       Bitbucket: the agent step runs on a self-hosted runner where
+                             Claude Code's sandbox can start, so plan and draft-pr are allowed
   --test-command CMD         The one command the fix agent may run (plan, draft-pr)
   --install-command CMD      Installs dependencies before the fix agent runs (plan, draft-pr)
   --schedule CRON            When the read job runs (default "17 * * * *", hourly)
@@ -69,6 +80,7 @@ const OPTIONS = {
   yes: { type: 'boolean', short: 'y' },
   'dry-run': { type: 'boolean' },
   force: { type: 'boolean' },
+  'self-hosted-runner': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
 };
 
@@ -86,7 +98,9 @@ export function renderConfig(a) {
     '',
     a.host === 'gitlab'
       ? '# Keep it equal to the cron of the GitLab pipeline schedule. Off the hour.'
-      : '# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.',
+      : a.host === 'bitbucket'
+        ? '# Keep it equal to the Bitbucket pipeline schedule (custom: dawnfix). Off the hour.'
+        : '# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.',
     `schedule: ${q(a.schedule)}`,
     '',
     'sources:',
@@ -102,7 +116,7 @@ export function renderConfig(a) {
     lines.push('', '# The one command the fix agent may run (its only shell permission). Plain words only.',
       'test:', `  command: ${q(a.testCommand)}`);
   }
-  lines.push('', 'report:', `  issues: ${a.host === 'gitlab' ? 'host' : 'github'}`, '');
+  lines.push('', 'report:', `  issues: ${a.host === 'github' ? 'github' : 'host'}`, '');
   return lines.join('\n');
 }
 
@@ -185,14 +199,17 @@ export async function init(argv, io) {
   }
   const repo = detectRepo(v.dir || io.cwd);
   if (!repo) return fail(io, 'not inside a git repository: run it at the root of the repo Dawnfix should watch');
-  const host = v.host || (repo.gitlab ? 'gitlab' : 'github');
-  if (host === 'bitbucket') return fail(io, 'Bitbucket support is coming soon. --host takes github or gitlab today');
-  if (!['github', 'gitlab'].includes(host)) return fail(io, `--host must be github or gitlab, not ${q(host)}`);
+  const host = v.host || (repo.gitlab ? 'gitlab' : repo.bitbucket ? 'bitbucket' : 'github');
+  if (!['github', 'gitlab', 'bitbucket'].includes(host)) return fail(io, `--host must be github, gitlab or bitbucket, not ${q(host)}`);
   const gitlab = host === 'gitlab';
+  const bitbucket = host === 'bitbucket';
   if (gitlab && v.ref) return fail(io, `--ref is for GitHub; on GitLab the include is pinned to ${TAG} with its integrity hash`);
   if (gitlab && v.enterprise) return fail(io, '--enterprise (closed-PR events) is for GitHub; on GitLab the Enterprise key alone turns hosted reporting on');
+  if (bitbucket && v.ref) return fail(io, `--ref is for GitHub; on Bitbucket the pipeline is the template of ${TAG}`);
+  if (bitbucket && v.enterprise) return fail(io, '--enterprise (closed-PR events) is for GitHub; on Bitbucket the Enterprise key alone turns hosted reporting on');
   if (gitlab && !repo.gitlab) io.stderr('dawnfix init: no GitLab remote named origin; the next steps say GROUP/PROJECT\n');
-  if (!gitlab && !repo.slug) io.stderr('dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n');
+  if (bitbucket && !repo.bitbucket) io.stderr('dawnfix init: no bitbucket.org remote named origin; the next steps say WORKSPACE/REPO\n');
+  if (host === 'github' && !repo.slug) io.stderr('dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n');
 
   const ask = io.isTTY && !v.yes ? createInterface({ input: io.stdin, output: io.stdoutStream }) : null;
   const prompt = async (text, dflt) => {
@@ -217,8 +234,11 @@ export async function init(argv, io) {
       if (!a.gcpProject) return fail(io, '--gcp-project is required with --cloud gcp');
       a.gcpWifProvider = v['gcp-wif-provider'] || (await prompt('Workload identity provider, if it exists (blank: set it up next)', ''));
     }
-    a.autonomy = v.autonomy || (await prompt('Autonomy: diagnose (issues only), plan or draft-pr', 'diagnose'));
+    a.autonomy = v.autonomy || (bitbucket && !v['self-hosted-runner'] ? 'diagnose'
+      : await prompt('Autonomy: diagnose (issues only), plan or draft-pr', 'diagnose'));
     if (!['diagnose', 'plan', 'draft-pr'].includes(a.autonomy)) return fail(io, `--autonomy must be diagnose, plan or draft-pr, not ${q(a.autonomy)}`);
+    if (bitbucket && a.autonomy !== 'diagnose' && !v['self-hosted-runner']) return fail(io, BB_FIX_REFUSED);
+    if (bitbucket && a.autonomy === 'diagnose') io.stderr(`dawnfix init: ${BB_DIAGNOSE_ONLY}\n`);
     const fixes = a.autonomy !== 'diagnose';
     a.testCommand = v['test-command'] ?? (fixes ? await prompt('Test command the fix agent may run', guess.test) : guess.test);
     a.installCommand = v['install-command'] ?? (fixes ? await prompt('Install command before the fix agent runs', guess.install) : '');
@@ -235,7 +255,8 @@ export async function init(argv, io) {
     if (errors.length) return fail(io, `these settings make an invalid .dawnfix.yml:\n${errors.map((e) => `  ${e.path}: ${e.message}`).join('\n')}`);
     let files = [
       ['.dawnfix.yml', config],
-      gitlab ? ['.gitlab-ci.yml', renderGitlabCi(a)] : ['.github/workflows/dawnfix.yml', renderCaller(a)],
+      gitlab ? ['.gitlab-ci.yml', renderGitlabCi(a)]
+        : bitbucket ? [BB_FILE, BB_TEMPLATE] : ['.github/workflows/dawnfix.yml', renderCaller(a)],
     ];
     let exists;
     try {
@@ -259,9 +280,26 @@ export async function init(argv, io) {
           + `${includeSnippet()}\n`
           + 'Then set the CI/CD variables below. The jobs run only in pipelines with DAWNFIX_RUN=true.\n';
     }
-    const steps = () => (gitlab ? gitlabNextSteps(a, repo, { wroteCi: !keepCi }) : nextSteps(a, repo));
+    // An existing bitbucket-pipelines.yml likewise: never touched; the part to merge is printed.
+    const keepBb = bitbucket && exists.includes(BB_FILE);
+    if (keepBb) {
+      files = files.filter(([p]) => p !== BB_FILE);
+      exists = exists.filter((p) => p !== BB_FILE);
+      const current = readFileSync(join(repo.root, BB_FILE), 'utf8');
+      ciNote = bbHasDawnfix(current)
+        ? `${BB_FILE} exists and already defines the Dawnfix pipeline; it is left as it is.\n`
+          + `To move it to ${TAG}, replace its Dawnfix steps and caches with these lines:\n\n${bbSnippet()}\n`
+        : `${BB_FILE} exists, so dawnfix does not change it (not even with --force). Merge these lines into it:\n`
+          + 'the dawnfix-state cache and the four steps under your definitions: (caches: and steps:), and the\n'
+          + 'custom pipeline dawnfix under your pipelines: (custom:). Keep the YAML anchors.\n\n'
+          + `${bbSnippet()}\n`
+          + 'Then set the deployment environments and variables below. The pipeline runs only from its schedule or by hand.\n';
+    }
+    const steps = () => (gitlab ? gitlabNextSteps(a, repo, { wroteCi: !keepCi })
+      : bitbucket ? bitbucketNextSteps(a, repo, { wroteCi: !keepBb }) : nextSteps(a, repo));
+    const where = gitlab ? repo.gitlab?.path : bitbucket ? (repo.bitbucket && `${repo.bitbucket.workspace}/${repo.bitbucket.slug}`) : repo.slug;
 
-    io.stdout(`Dawnfix ${VERSION} in ${(gitlab ? repo.gitlab?.path : repo.slug) || repo.root}. ${v['dry-run'] ? 'Dry run: nothing is written.' : 'These files will be written:'}\n`);
+    io.stdout(`Dawnfix ${VERSION} in ${where || repo.root}. ${v['dry-run'] ? 'Dry run: nothing is written.' : 'These files will be written:'}\n`);
     for (const [p, text] of files) {
       io.stdout(`\n--- ${p}${exists.includes(p) ? ' (exists; replaced only with --force)' : ''}\n${text}`);
     }

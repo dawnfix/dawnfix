@@ -564,10 +564,88 @@ def _manifest(root: Path) -> dict:
 
 ISOLATIONS = ("namespace", "job")
 # Job isolation: no CI credential may be in the agent job at all (the agent's process could read
-# its parent's environment), no git metadata, no git credential helper.
-CI_CREDENTIAL = re.compile(r"^(CI_\w*(TOKEN|PASSWORD|JWT)\w*|\w*PASSWORD\w*|GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_\w+|"
-                           r"GITLAB_OIDC_TOKEN|BITBUCKET_STEP_OIDC_TOKEN)$", re.I)
+# its parent's environment), no git metadata, no git credential helper. Besides the CI's own
+# (GitLab CI_*TOKEN*, Bitbucket BITBUCKET_*TOKEN*), any variable named like a secret: GitLab
+# project variables without an environment scope and Bitbucket repository and workspace
+# variables reach every job, so a stray NPM_TOKEN would reach the agent's job. The AI key is the
+# one secret this job is for.
+CI_CREDENTIAL = re.compile(r"^(CI_\w*(TOKEN|PASSWORD|JWT)\w*|BITBUCKET_\w*TOKEN\w*|\w*SSH_KEY\w*|"
+                           r"\w*(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)\w*|\w*(API|PRIVATE|ACCESS|AUTH)_?KEY\w*|"
+                           r"GIT_ASKPASS|SSH_ASKPASS|GIT_CONFIG_\w+|GITLAB_OIDC_TOKEN|BITBUCKET_STEP_OIDC_TOKEN)$", re.I)
+AGENT_SECRETS = ("DAWNFIX_AI_API_KEY", "ANTHROPIC_API_KEY")
 SYSTEM_GITCONFIG = Path("/etc/gitconfig")
+# SSH credentials, failing closed: Bitbucket Pipelines writes the repository's SSH key (Repository
+# settings > SSH keys) under this directory in each step; the template deletes it and ~/.ssh.
+PIPELINES_SSH_DIR = Path("/opt/atlassian/pipelines/agent/ssh")
+PRIVATE_KEY = re.compile(rb"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----")
+
+
+def ssh_refusals(env, home: Path, pipelines_ssh: Path = PIPELINES_SSH_DIR) -> list[str]:
+    """Why an SSH credential is still reachable (empty: none is)."""
+    why = []
+    if env.get("SSH_AUTH_SOCK"):
+        why.append("SSH_AUTH_SOCK is set (an SSH agent): unset it in the job script first")
+    try:
+        # The directory is a read-only mount; known_hosts (public host keys) is always there.
+        left = [f for f in pipelines_ssh.rglob("*") if f.is_file() and f.stat().st_size and f.name != "known_hosts"] \
+            if pipelines_ssh.exists() else []
+    except OSError:
+        left = [pipelines_ssh]
+    if left:
+        why.append(f"{pipelines_ssh} holds files besides known_hosts (the pipeline's SSH key; the directory is "
+                   "read-only on Bitbucket): remove the repository's SSH key (Repository settings > SSH keys)")
+    key_file = env.get("BITBUCKET_SSH_KEY_FILE", "")
+    if key_file and os.path.lexists(key_file):
+        why.append(f"BITBUCKET_SSH_KEY_FILE names an existing file ({key_file}): delete it first")
+    ssh = home / ".ssh"
+    files = []
+    try:
+        files = [f for f in ssh.rglob("*") if f.is_file()] if ssh.exists() else []
+    except OSError:
+        why.append(f"{ssh} cannot be listed: delete it in the job script first")
+    for f in files:
+        try:
+            with open(f, "rb") as fh:
+                head = fh.read(1 << 16)
+        except OSError:
+            why.append(f"{f} cannot be read: delete {ssh} in the job script first")
+            continue
+        if PRIVATE_KEY.search(head):
+            why.append(f"{f} holds a private key: delete {ssh} in the job script first")
+    config = ssh / "config"
+    if config.is_file():
+        for m in re.finditer(r"(?im)^\s*IdentityFile\s*=?\s*(\S+)", config.read_text(errors="replace")):
+            name = m.group(1).strip('"').replace("%d", str(home))
+            ident = home / name[2:] if name.startswith("~/") else Path(name) if name.startswith("/") else ssh / name
+            if os.path.lexists(ident):
+                why.append(f"{ident} (an IdentityFile in {config}) exists: delete it first")
+    return why
+
+
+def network_sandbox_refusal(mode: str, settings: dict, which=shutil.which, probe=None) -> str:
+    """On Bitbucket Pipelines every step can push through Bitbucket's git proxy (localhost:29418)
+    with the pipeline's own credential, clone or not. Only Claude Code's sandbox keeps the agent's
+    commands off it: their network namespace has its own loopback and reaches only the allow-list.
+    So the agent stage refuses to start ("" means it may) unless the commands it can run are
+    sandboxed with that allow-list and the sandbox can start here. Diagnose mode runs no command."""
+    if mode != "fix":
+        return ""
+    sb = settings.get("sandbox") or {}
+    net = sb.get("network") or {}
+    domains = [str(d).lower() for d in net.get("allowedDomains") or []]
+    if not (sb.get("enabled") and sb.get("failIfUnavailable") and not sb.get("allowUnsandboxedCommands", True)
+            and net.get("strictAllowlist")):
+        return "Claude Code's sandbox is not required with a strict network allow-list"
+    if any(d in ("localhost", "127.0.0.1", "::1", "*") or d.startswith("127.") for d in domains):
+        return "the sandbox's network allow-list names the local host"
+    bwrap = which("bwrap")
+    if not bwrap:
+        return "bwrap is not installed, so Claude Code's sandbox cannot start"
+    probe = probe or _probe
+    if not probe([bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--unshare-all", "--unshare-net",
+                  "--die-with-parent", "true"]):
+        return "bwrap cannot create user and network namespaces here, so Claude Code's sandbox cannot start"
+    return ""
 
 
 def sandbox_probe(which=shutil.which, probe=None) -> str:
@@ -585,7 +663,7 @@ def sandbox_probe(which=shutil.which, probe=None) -> str:
 def job_isolation_refusals(env, workdir: Path, system_gitconfig: Path = SYSTEM_GITCONFIG) -> list[str]:
     """Why the agent job is not clean enough for --isolation job (empty: it is)."""
     why = []
-    creds = sorted(k for k, v in env.items() if v and CI_CREDENTIAL.match(k))
+    creds = sorted(k for k, v in env.items() if v and CI_CREDENTIAL.match(k) and k not in AGENT_SECRETS)
     urls = sorted(k for k, v in env.items() if isinstance(v, str) and re.search(r"://[^/\s@:]+:[^/\s@]+@", v))
     creds = sorted(set(creds) | set(urls))
     if creds:
@@ -593,6 +671,7 @@ def job_isolation_refusals(env, workdir: Path, system_gitconfig: Path = SYSTEM_G
     if os.path.lexists(workdir / ".git"):
         why.append(f"{workdir} has a .git: give the agent job a tokenless archive of the commit (GIT_STRATEGY: none)")
     home = Path(env.get("HOME") or os.path.expanduser("~"))
+    why += ssh_refusals(env, home, PIPELINES_SSH_DIR)
     if os.path.lexists(home / ".git-credentials"):
         why.append(f"{home / '.git-credentials'} exists")
     xdg = Path(env.get("XDG_CONFIG_HOME") or home / ".config")
@@ -609,7 +688,7 @@ def job_isolation_refusals(env, workdir: Path, system_gitconfig: Path = SYSTEM_G
 
 def run_agent(*, mode: str, workdir: Path, findings: Path, out_dir: Path, config_path: Path, env, http: Http,
               claude_cmd=None, budget: int | None = None, pass_env=(), snapshot_dir: Path | None = None,
-              isolation: str = "namespace", base_commit: str = "") -> int:
+              isolation: str = "namespace", base_commit: str = "", require_network_sandbox: bool = False) -> int:
     """isolation "namespace" (the default, any machine): the agent contained in a PID namespace
     or cgroup, its changes captured as a patch with a .git it never saw. isolation "job" (only
     where the CI gives each stage its own fresh container: GitLab CI, Bitbucket Pipelines; the
@@ -620,6 +699,19 @@ def run_agent(*, mode: str, workdir: Path, findings: Path, out_dir: Path, config
     if isolation not in ISOLATIONS:
         raise AgentError("--isolation must be namespace or job")
     ai = ai_settings(env)
+    if require_network_sandbox:
+        why = network_sandbox_refusal(mode, tools(mode, None)[2])
+        if why:
+            raise AgentError(f"on Bitbucket Pipelines the agent stage refuses to start: {why}. Every step can push "
+                             "through Bitbucket's git proxy (localhost:29418); only Claude Code's sandbox keeps the "
+                             "agent's commands off it, and it cannot start in Bitbucket Cloud's step containers. On "
+                             "Bitbucket Cloud set autonomy: diagnose. Fix modes need a self-hosted runner for the "
+                             "agent step: Linux, bwrap able to create user and network namespaces (unprivileged user "
+                             "namespaces on; with the Docker runner a seccomp/AppArmor profile that allows them), "
+                             "bubblewrap, socat, Node 20+ and Python 3.11+")
+        say("sandbox: required on Bitbucket Pipelines and able to start; the agent's commands reach only the allow-list"
+            if mode == "fix" else
+            "sandbox: not needed in diagnose mode on Bitbucket Pipelines; the agent has no Bash or network tool")
     if isolation == "job":
         refused = job_isolation_refusals(env, Path(workdir).resolve())
         if refused:

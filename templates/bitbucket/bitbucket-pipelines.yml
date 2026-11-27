@@ -1,0 +1,189 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Dawnfix for Bitbucket Pipelines (https://github.com/dawnfix/dawnfix). Bitbucket has no remote
+# include: copy this file to bitbucket-pipelines.yml, or merge its `definitions` and its custom
+# pipeline `dawnfix` into yours (`npx dawnfix init --host bitbucket` does this for you).
+#
+# One custom pipeline, `dawnfix`, run by a schedule (Repository settings > Pipelines > Schedules:
+# branch = your main branch, pipeline = custom: dawnfix). It never runs on a push.
+# Four steps, each a fresh container holding one secret at most:
+#   dawnfix read     the cloud OIDC token (oidc: true), read-only; writes the findings and a
+#                    tokenless archive of the commit (no .git) for the agent step
+#   dawnfix agent    the AI key only (deployment dawnfix-agent); runs Claude Code. No clone, no git,
+#                    no repo token: its only output is the changed files and the issue bodies, as data
+#   dawnfix publish  the repo token only (deployment dawnfix-publish); a fresh clone that checks
+#                    every file from scratch (no .git, no CI config, no symlinks, submodules or
+#                    binaries, a credential scan), commits with hooks off, pushes with [skip ci]
+#                    and opens a DRAFT pull request. Never merges. It also keeps the read step's
+#                    state for the next run (Bitbucket caches are write-once: it deletes the old
+#                    cache through the API and Bitbucket saves the new state when the step succeeds)
+#   dawnfix report   the Enterprise key only (deployment dawnfix-report); optional
+#
+# Variables. Secrets are SECURED DEPLOYMENT variables (Repository settings > Deployments), each in
+# the one environment whose step uses it, so no other step ever holds it. Never put a secret in
+# repository or workspace variables: those reach every step (the agent step unsets anything named
+# like a secret and refuses to run if one is left).
+#   DAWNFIX_AI_API_KEY       environment dawnfix-agent (type Test)          your AI API key (Claude today)
+#   DAWNFIX_HOST_TOKEN       environment dawnfix-publish (type Staging)     a repository access token:
+#                            scopes repository:write, pullrequest:write, pipeline:write (the cache);
+#                            or an Atlassian API token with DAWNFIX_BITBUCKET_EMAIL (not secret) beside it
+#   DAWNFIX_ENTERPRISE_KEY   environment dawnfix-report (type Production)   optional, Enterprise only
+#   Repository variables (not secret): DAWNFIX_AWS_ROLE_ARN + DAWNFIX_AWS_REGION, or
+#   DAWNFIX_GCP_WIF_PROVIDER. Optional: DAWNFIX_AUTONOMY, DAWNFIX_AI_MODEL, DAWNFIX_INSTALL_COMMAND,
+#   DAWNFIX_PASS_ENV.
+# REQUIRED: a push restriction on every branch (Repository settings > Branch restrictions: pattern *,
+# write access only for the account behind DAWNFIX_HOST_TOKEN). Every step can push through
+# Bitbucket's git proxy (localhost:29418) with the pipeline's own credential, clone or not; the
+# restriction refuses those pushes. Fix modes (plan, draft-pr) also need Claude Code's sandbox, which
+# cannot start in Bitbucket Cloud's step containers: the agent step refuses to run them there. Use
+# diagnose mode on Bitbucket Cloud, or run the agent step on a self-hosted runner where bwrap can
+# create user and network namespaces.
+# The environment types keep Bitbucket's order (Test, then Staging, then Production). Every run
+# records a deployment in each of the three environments: that is how Bitbucket scopes a secret to
+# one step. Issues: only when the repository's issue tracker is on; with it off, the text Dawnfix
+# would file goes to the publish step's log and its artifact.
+
+definitions:
+  caches:
+    dawnfix-state: .dawnfix-state
+  steps:
+    - step: &dawnfix-read
+        name: dawnfix read
+        image: python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+        oidc: true
+        max-time: 20
+        caches: [dawnfix-state]
+        script:
+          - &dawnfix-install |
+            export DAWNFIX_VERSION="0.5.0"
+            [ -z "$DAWNFIX_GCP_WIF_PROVIDER" ] || DAWNFIX_PIP_EXTRA="[gcp]"
+            # DAWNFIX_PIP_SPEC (optional): another pip spec, read from this step's checkout (e.g. a test wheel).
+            python3 -m venv /opt/dawnfix
+            (cd "${DAWNFIX_SRC:-.}" && /opt/dawnfix/bin/pip install --quiet --disable-pip-version-check "${DAWNFIX_PIP_SPEC:-dawnfix==$DAWNFIX_VERSION}${DAWNFIX_PIP_EXTRA}")
+            export PATH="/opt/dawnfix/bin:$PATH"
+          - |
+            umask 077
+            mkdir -p /run/dawnfix && printf %s "$BITBUCKET_STEP_OIDC_TOKEN" > /run/dawnfix/oidc-token
+            if [ -n "$DAWNFIX_AWS_ROLE_ARN" ]; then
+              export AWS_ROLE_ARN="$DAWNFIX_AWS_ROLE_ARN" AWS_WEB_IDENTITY_TOKEN_FILE=/run/dawnfix/oidc-token
+              export AWS_ROLE_SESSION_NAME="dawnfix-$BITBUCKET_BUILD_NUMBER" AWS_REGION="${DAWNFIX_AWS_REGION:-us-east-1}"
+            fi
+            if [ -n "$DAWNFIX_GCP_WIF_PROVIDER" ]; then
+              printf '{"type":"external_account","audience":"//iam.googleapis.com/%s","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"file":"/run/dawnfix/oidc-token"}}' \
+                "$DAWNFIX_GCP_WIF_PROVIDER" > /run/dawnfix/gcp.json
+              export GOOGLE_APPLICATION_CREDENTIALS=/run/dawnfix/gcp.json
+            fi
+            umask 022
+            set -- --config .dawnfix.yml --state .dawnfix-state/state.json --out .dawnfix-out/read
+            [ "$DAWNFIX_BASELINE" != "true" ] || set -- "$@" --baseline
+            [ "$DAWNFIX_DRY_RUN" != "true" ] || set -- "$@" --dry-run
+            dawnfix run read "$@"
+            # The commit's files for the agent step, without .git (the clone's config points at
+            # Bitbucket's git proxy): the agent step gets no git metadata from here.
+            mkdir -p .dawnfix-out/source .dawnfix-out/state
+            tar -C "$BITBUCKET_CLONE_DIR" --exclude=./.git --exclude=./.dawnfix-out --exclude=./.dawnfix-state \
+              -cf .dawnfix-out/source/source.tar .
+            [ ! -f .dawnfix-state/state.json ] || cp .dawnfix-state/state.json .dawnfix-out/state/state.json
+        artifacts:
+          - .dawnfix-out/read/**
+          - .dawnfix-out/source/**
+          - .dawnfix-out/state/**
+
+    - step: &dawnfix-agent
+        name: dawnfix agent
+        image: node:22-trixie-slim@sha256:f0960f8dc047f358e3fb428f36ccba21732194fa5f0cac849f401e63e62fb9e6
+        deployment: dawnfix-agent
+        oidc: false
+        # No clone: the code comes as the read step's tokenless archive, unpacked where no .git exists.
+        clone:
+          enabled: false
+        max-time: 60
+        script:
+          - |
+            # No credential reaches the agent: every Bitbucket token, anything named like a secret
+            # (repository and workspace variables reach every step) and git's credential settings go
+            # before anything else runs (dawnfix run agent --isolation job refuses to start otherwise).
+            # SSH credentials: the step's SSH key (Repository settings > SSH keys), ~/.ssh, an agent.
+            # /opt/atlassian/pipelines/agent/ssh is a read-only mount: the agent stage refuses to start if it
+            # holds a key (anything besides known_hosts).
+            rm -rf ~/.ssh; rm -rf /opt/atlassian/pipelines/agent/ssh 2>/dev/null || true; unset SSH_AUTH_SOCK
+            for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | grep -iE '^BITBUCKET_[A-Za-z0-9_]*TOKEN|SSH_KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|(API|PRIVATE|ACCESS|AUTH)_?KEY|^GIT_ASKPASS$|^SSH_ASKPASS$|^GIT_CONFIG_' | grep -vxE 'DAWNFIX_AI_API_KEY|ANTHROPIC_API_KEY'); do unset "$v"; done
+            has_new=$(sed -n 's/^has_new=//p' .dawnfix-out/read/outputs.env 2>/dev/null)
+            if [ "$has_new" != "true" ]; then echo "dawnfix: nothing new; the agent does not run"; exit 0; fi
+            autonomy=$(sed -n 's/^autonomy=//p' .dawnfix-out/read/outputs.env)
+            mode=fix; [ "$autonomy" != "diagnose" ] || mode=diagnose
+            export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-venv bubblewrap socat >/dev/null
+            export DAWNFIX_WORKDIR=/dawnfix/work DAWNFIX_SRC=/dawnfix/work
+            mkdir -p "$DAWNFIX_WORKDIR" && tar -xf .dawnfix-out/source/source.tar -C "$DAWNFIX_WORKDIR" --no-same-owner
+          - *dawnfix-install
+          - |
+            has_new=$(sed -n 's/^has_new=//p' .dawnfix-out/read/outputs.env 2>/dev/null)
+            [ "$has_new" = "true" ] || exit 0
+            if [ -n "$DAWNFIX_INSTALL_COMMAND" ] && [ "$mode" = fix ]; then (cd "$DAWNFIX_WORKDIR" && sh -c "$DAWNFIX_INSTALL_COMMAND"); fi
+            # --isolation job: this step is the agent's isolation. It runs no git command and holds no
+            # repo token; the changed files go to the publish step as data.
+            set --
+            for n in $DAWNFIX_PASS_ENV; do set -- "$@" --pass-env "$n"; done
+            dawnfix run agent --mode "$mode" --isolation job --dir "$DAWNFIX_WORKDIR" \
+              --findings "$BITBUCKET_CLONE_DIR/.dawnfix-out/read/findings.json" --out /tmp/dawnfix-agent "$@"
+            rm -rf .dawnfix-out/agent && cp -R /tmp/dawnfix-agent .dawnfix-out/agent
+        artifacts:
+          - .dawnfix-out/agent/**
+
+    - step: &dawnfix-publish
+        name: dawnfix publish
+        image: python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+        deployment: dawnfix-publish
+        oidc: false
+        max-time: 20
+        caches: [dawnfix-state]
+        script:
+          - |
+            mkdir -p .dawnfix-out/publish
+            export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates curl >/dev/null
+            # The state for the next run: Bitbucket saves a cache only when none exists, so the old
+            # one is deleted here and the read step's new state is saved when this step succeeds.
+            if [ -f .dawnfix-out/state/state.json ]; then
+              mkdir -p .dawnfix-state && cp .dawnfix-out/state/state.json .dawnfix-state/state.json
+              if [ -n "$DAWNFIX_BITBUCKET_EMAIL" ]; then auth="Basic $(printf %s "$DAWNFIX_BITBUCKET_EMAIL:$DAWNFIX_HOST_TOKEN" | base64 | tr -d '\n')"; else auth="Bearer $DAWNFIX_HOST_TOKEN"; fi
+              printf 'header = "Authorization: %s"\n' "$auth" | curl -sS -o /dev/null -w 'dawnfix: state cache rotated (HTTP %{http_code})\n' --max-redirs 0 -K - \
+                -X DELETE "https://api.bitbucket.org/2.0/repositories/$BITBUCKET_REPO_FULL_NAME/pipelines-config/caches?name=dawnfix-state"
+              unset auth
+            fi
+            if [ ! -f .dawnfix-out/agent/meta.json ]; then echo "dawnfix: nothing to publish"; exit 0; fi
+            # A fresh repository of the pipeline's commit, made from the step's clone without its
+            # config (which points at Bitbucket's git proxy); the artifact's files are checked from scratch.
+            git -c core.hooksPath=/dev/null clone -q --no-local --no-checkout "$BITBUCKET_CLONE_DIR" /tmp/dawnfix-checkout
+            git -C /tmp/dawnfix-checkout -c core.hooksPath=/dev/null checkout -q --detach "$BITBUCKET_COMMIT"
+            git -C /tmp/dawnfix-checkout remote remove origin
+            export DAWNFIX_SRC=/tmp/dawnfix-checkout
+          - *dawnfix-install
+          - |
+            [ -f .dawnfix-out/agent/meta.json ] || exit 0
+            # Each commit message carries [skip ci]: the pushed branch starts no pipeline by itself.
+            dawnfix run publish --isolation job --dir /tmp/dawnfix-checkout --artifact .dawnfix-out/agent \
+              --findings .dawnfix-out/read/findings.json --out .dawnfix-out/publish
+        artifacts:
+          - .dawnfix-out/publish/**
+
+    - step: &dawnfix-report
+        name: dawnfix report
+        image: python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+        deployment: dawnfix-report
+        oidc: false
+        max-time: 10
+        script:
+          # Without DAWNFIX_ENTERPRISE_KEY the report stage prints one line and sends nothing.
+          - *dawnfix-install
+          - |
+            set --
+            [ ! -f .dawnfix-out/read/ingest.json ] || set -- "$@" --ingest .dawnfix-out/read/ingest.json
+            [ ! -f .dawnfix-out/publish/opened.json ] || set -- "$@" --opened .dawnfix-out/publish/opened.json
+            dawnfix run report "$@"
+
+pipelines:
+  custom:
+    dawnfix:
+      - step: *dawnfix-read
+      - step: *dawnfix-agent
+      - step: *dawnfix-publish
+      - step: *dawnfix-report

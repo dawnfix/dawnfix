@@ -5,7 +5,7 @@ import { doctor } from './doctor.mjs';
 import { init } from './init.mjs';
 import { VERSION } from './version.mjs';
 
-export const HELP = `Dawnfix ${VERSION}: the AI SRE that runs in your own GitHub Actions or GitLab CI.
+export const HELP = `Dawnfix ${VERSION}: the AI SRE that runs in your own GitHub Actions, GitLab CI or Bitbucket Pipelines.
 Source available under FSL-1.1-ALv2. https://dawnfix.dev
 
 Usage: npx dawnfix <command> [options]
@@ -13,7 +13,8 @@ Usage: npx dawnfix <command> [options]
 Commands:
   init        Set Dawnfix up in this repo: .dawnfix.yml and a 15-line workflow that calls
               dawnfix/dawnfix/.github/workflows/dawnfix.yml (or, with --host gitlab, a
-              .gitlab-ci.yml that includes the pinned template). Shows both before writing.
+              .gitlab-ci.yml that includes the pinned template; with --host bitbucket,
+              bitbucket-pipelines.yml). Shows both before writing.
   doctor      Check the setup: the config, the pinned workflow, secret and variable
               names, Free or Enterprise.
   flare ...   Dawnfix Flare: read-only audit of Cloudflare accounts and Workers

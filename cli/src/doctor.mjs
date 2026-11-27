@@ -8,6 +8,8 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import CONFIG_SCHEMA from '../../core/schema/config.schema.json';
+import { pushRestrictionVerdict } from './bitbucket-check.mjs';
+import { hasDawnfix as bbHasDawnfix, SECRETS as BITBUCKET_SECRETS, versionOf as bbVersionOf } from './bitbucket.mjs';
 import { hasDawnfix, INTEGRITY, SECRETS as GITLAB_SECRETS } from './gitlab.mjs';
 import { detectRepo } from './repo.mjs';
 import { validate } from './schema.mjs';
@@ -20,7 +22,8 @@ Checks the Dawnfix setup of the repo you are in:
   - .github/workflows/ calls dawnfix/dawnfix/.github/workflows/dawnfix.yml at a pinned
     release (a tag such as v0 or v${VERSION}, or a commit SHA), or holds the copy-it-yourself
     template, with the permissions its jobs need and the cron of .dawnfix.yml;
-    on GitLab, .gitlab-ci.yml includes the Dawnfix template (pinned, with integrity)
+    on GitLab, .gitlab-ci.yml includes the Dawnfix template (pinned, with integrity);
+    on Bitbucket, bitbucket-pipelines.yml has the Dawnfix custom pipeline
   - the secrets and variables it uses exist (names only, through gh; --no-gh lists them)
   - Free or Enterprise: whether an Enterprise key is set
 Exit 0 when nothing failed, 1 otherwise.
@@ -111,7 +114,8 @@ export async function doctor(argv, io) {
     io.stderr('dawnfix doctor: not inside a git repository\n');
     return 2;
   }
-  io.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.gitlab?.path || repo.root}\n\n`);
+  const bbName = repo.bitbucket && `${repo.bitbucket.workspace}/${repo.bitbucket.slug}`;
+  io.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.gitlab?.path || bbName || repo.root}\n\n`);
 
   // 1. .dawnfix.yml
   const cfgPath = join(repo.root, '.dawnfix.yml');
@@ -156,10 +160,56 @@ export async function doctor(argv, io) {
     io.stdout(failed ? `\n${failed} check(s) failed.\n` : '\nAll checks passed.\n');
     return failed ? 1 : 0;
   }
+  const bbPath = join(repo.root, 'bitbucket-pipelines.yml');
+  const bb = !wf && !(ci && hasDawnfix(ci)) && existsSync(bbPath) ? readFileSync(bbPath, 'utf8') : '';
+  if (bb && bbHasDawnfix(bb)) {
+    const pinnedTo = bbVersionOf(bb);
+    if (!pinnedTo) warn('bitbucket-pipelines.yml has the Dawnfix pipeline but no DAWNFIX_VERSION: take the steps of npx dawnfix init --host bitbucket --dry-run');
+    else if (pinnedTo !== VERSION) warn(`bitbucket-pipelines.yml runs Dawnfix ${pinnedTo}; this is ${VERSION} (npx dawnfix init --host bitbucket --dry-run shows the new steps)`);
+    else ok(`bitbucket-pipelines.yml has the Dawnfix custom pipeline of v${pinnedTo}`);
+    if (/^\s*oidc:\s*true\s*$/m.test(bb) && (bb.match(/^\s*oidc:\s*true\s*$/gm) || []).length > 1) {
+      bad('bitbucket-pipelines.yml: oidc: true on more than one step; only the read step may get the OIDC token');
+    }
+    const sources = (config?.sources || []).map((s) => Object.keys(s)[0]);
+    const vars = [...(sources.includes('aws') ? ['DAWNFIX_AWS_ROLE_ARN', 'DAWNFIX_AWS_REGION'] : []), ...(sources.includes('gcp') ? ['DAWNFIX_GCP_WIF_PROVIDER'] : [])];
+    warn('Bitbucket: check by hand in Repository settings > Deployments (and a schedule for custom: dawnfix):');
+    for (const [name, env, type, what] of BITBUCKET_SECRETS) io.stdout(`        secret ${name} (secured, deployment environment ${env}, type ${type}): ${what}\n`);
+    for (const name of vars) io.stdout(`        repository variable ${name}\n`);
+    io.stdout('        no secret in repository or workspace variables (they reach every step)\n');
+    // The push restriction on * (Bitbucket's git proxy reaches every step). Read with the user's own
+    // token from BITBUCKET_TOKEN (BITBUCKET_EMAIL too for an Atlassian API token); only to api.bitbucket.org.
+    if (bbName && process.env.BITBUCKET_TOKEN) {
+      const tok = process.env.BITBUCKET_TOKEN;
+      const auth = process.env.BITBUCKET_EMAIL
+        ? `Basic ${Buffer.from(`${process.env.BITBUCKET_EMAIL}:${tok}`).toString('base64')}` : `Bearer ${tok}`;
+      try {
+        const res = await fetch(`https://api.bitbucket.org/2.0/repositories/${bbName}/branch-restrictions?pagelen=100`,
+          { headers: { Authorization: auth, Accept: 'application/json' }, redirect: 'error' });
+        if (!res.ok) bad(`Bitbucket branch restrictions: HTTP ${res.status} (the token needs repository admin)`);
+        else {
+          const v = pushRestrictionVerdict((await res.json()).values);
+          (v.ok ? ok : bad)(`Bitbucket: ${v.why}`);
+        }
+      } catch (e) {
+        bad(`Bitbucket branch restrictions: ${e.name}`);
+      }
+    } else {
+      bad('Bitbucket: a push restriction on * letting only the publish account push is REQUIRED and was not checked:');
+      io.stdout('        set BITBUCKET_TOKEN (and BITBUCKET_EMAIL for an Atlassian API token) and run doctor again;\n');
+      io.stdout('        npx dawnfix init --host bitbucket --dry-run prints the command that sets it\n');
+    }
+    if (config && config.autonomy && config.autonomy !== 'diagnose') {
+      warn(`Bitbucket: autonomy ${config.autonomy} changes code, which needs a self-hosted runner for the agent step `
+        + '(Claude Code\'s sandbox cannot start on Bitbucket Cloud; the agent step refuses there). On Cloud use diagnose');
+    }
+    ok('plan: Free & source available, unless DAWNFIX_ENTERPRISE_KEY is set (hosted reporting, Enterprise)');
+    io.stdout(failed ? `\n${failed} check(s) failed.\n` : '\nAll checks passed.\n');
+    return failed ? 1 : 0;
+  }
   let needs = { secrets: [AI_SECRET], vars: [] };
   let passesKey = false;
   if (!wf) {
-    bad(`no Dawnfix workflow in .github/workflows/${ci ? ' and no Dawnfix include in .gitlab-ci.yml' : ''}: run npx dawnfix init`);
+    bad(`no Dawnfix workflow in .github/workflows/${ci ? ' and no Dawnfix include in .gitlab-ci.yml' : ''}${bb ? ' and no Dawnfix pipeline in bitbucket-pipelines.yml' : ''}: run npx dawnfix init`);
   } else {
     const text = readFileSync(join(repo.root, wf.file), 'utf8');
     if (wf.kind === 'caller') {

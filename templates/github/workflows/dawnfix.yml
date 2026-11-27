@@ -105,7 +105,7 @@ permissions: {}
 # CORE_REF is the fallback: a tag or commit SHA of github.com/dawnfix/dawnfix. When it is set,
 # dawnfix-core is installed from git at that ref and the instructions are loaded from it.
 env:
-  DAWNFIX_VERSION: "0.4.0"
+  DAWNFIX_VERSION: "0.5.0"
   CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:

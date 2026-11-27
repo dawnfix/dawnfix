@@ -174,8 +174,9 @@ def refuse_ci_includes(checkout: Path, base_sha: str, changed, ci_config_paths=(
 
 def plan_fix(checkout: Path, artifact: Path, findings: dict, base_sha: str, autonomy: str, test_cmd: str | None,
              budget: int, run_url: str, bodies: Path, tmp: Path, guard: TextGuard | None = None,
-             patch: bytes | None = None, ci_config_paths=()):
-    """The Commit step: commits made, a plan of PRs and issues, and whether anything failed."""
+             patch: bytes | None = None, ci_config_paths=(), commit_note: str = ""):
+    """The Commit step: commits made, a plan of PRs and issues, and whether anything failed.
+    commit_note: a line added to each commit message (Bitbucket: "[skip ci]")."""
     plan, failed = [], False
     result = load_result(artifact / "run")
     if result is None:
@@ -198,7 +199,8 @@ def plan_fix(checkout: Path, artifact: Path, findings: dict, base_sha: str, auto
                 (checkout / f).unlink(missing_ok=True)
 
     def commit(msg):
-        git("commit", "-q", "--no-verify", "-m", msg, config=COMMITTER, **kw)
+        note = ["-m", commit_note] if commit_note else []
+        git("commit", "-q", "--no-verify", "-m", msg, *note, config=COMMITTER, **kw)
 
     footer = f"\n\n---\nOpened by Dawnfix. AI-generated: review before merging. Run: {run_url}\n"
     for fp, entry in _entries(result, findings):
@@ -301,7 +303,7 @@ def publish_plan(checkout: Path, plan: list, host: HostAdapter, token: str, issu
             say(f"{fp}: commented on open issue #{existing.number}")
         else:
             made = host.open_issue(f"dawnfix: {title} ({fp})", text)
-            say(f"{fp}: opened issue {made.url}")
+            say(f"{fp}: written to the log above (no issue tracker)" if made.kind == "log" else f"{fp}: opened issue {made.url}")
 
     for e in plan:
         fp, action, title, body = e["fp"], e["action"], e["title"], e["body"]
@@ -368,7 +370,7 @@ def publish_diagnose(artifact: Path, findings: dict, host: HostAdapter, issues: 
     if issues not in cfg.HOST_ISSUES:
         say(f"report.issues is {issues}; the diagnose stage files repo host issues only, nothing filed")
         return 0, False
-    filed = 0
+    filed = logged = 0
     footer = f"\n\n---\nDiagnosed by Dawnfix. AI-generated: verify before acting. Run: {run_url}\n"
     for fp, entry in _entries(result, findings):
         action = entry.get("action") or "none"
@@ -390,9 +392,12 @@ def publish_diagnose(artifact: Path, findings: dict, host: HostAdapter, issues: 
             host.comment(existing, body)
             say(f"{fp}: commented on open issue #{existing.number}")
         else:
-            host.open_issue(f"dawnfix: {_title(entry)} ({fp})", body)
-            filed += 1
-    say(f"dawnfix: {filed} new issue(s) filed")
+            made = host.open_issue(f"dawnfix: {_title(entry)} ({fp})", body)
+            if made.kind == "log":
+                logged += 1
+            else:
+                filed += 1
+    say(f"dawnfix: {filed} new issue(s) filed" + (f", {logged} written to the log (no issue tracker)" if logged else ""))
     return filed, False
 
 
@@ -428,7 +433,7 @@ def run_publish(*, checkout: Path, artifact: Path, findings_path: Path, out_dir:
     check_version()
     # Every text sent to the host is scanned: this stage's own secrets by value, the earlier
     # stages' by hash (the agent's artifact carries its own and the read stage's list).
-    guard = TextGuard(values=[token, *secret_values], hashes=load_hashes(artifact / HASHES_FILE) +
+    guard = TextGuard(values=[token, *host.auth_values, *secret_values], hashes=load_hashes(artifact / HASHES_FILE) +
                       load_hashes(findings_path.parent / HASHES_FILE))
     host = GuardedHost(host, guard)
     # The config of the fresh checkout at the base commit, not anything the agent wrote.
@@ -457,7 +462,7 @@ def run_publish(*, checkout: Path, artifact: Path, findings_path: Path, out_dir:
             patch = artifact_patch(checkout, artifact, meta, isolation, Path(tmp))
             plan, failed = plan_fix(checkout, artifact, findings, meta.get("base_sha", ""), autonomy,
                                     conf.test_command, budget, run_url, bodies, Path(tmp), guard, patch=patch,
-                                    ci_config_paths=(host.ci_config_path(),))
+                                    ci_config_paths=(host.ci_config_path(),), commit_note=host.commit_note)
             opened, failed2 = publish_plan(checkout, plan, host, token, issues, guard, push_env)
             failed = failed or failed2
     (out_dir / "opened.json").write_text(json.dumps({"schema": "dawnfix.opened/1", "opened": opened}, indent=2) + "\n")

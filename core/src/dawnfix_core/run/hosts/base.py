@@ -34,6 +34,8 @@ class HostAdapter(ABC):
     name = "host"
     # git push options for the dawnfix branch (GitLab: ci.skip, so no pipeline runs on it).
     push_options: tuple[str, ...] = ()
+    # A line added to each commit message (Bitbucket: "[skip ci]", so the push runs no pipeline).
+    commit_note: str = ""
 
     def __init__(self, ctx: CiContext, token: str = "", http: Http | None = None):
         self.ctx = ctx
@@ -68,6 +70,15 @@ class HostAdapter(ABC):
     def changes_opened_today(self) -> int:
         """dawnfix/<fingerprint> changes created today (UTC): limits.fix_prs_per_day."""
 
+    def issues_enabled(self) -> bool:
+        """False when the repo has no issue tracker: open_issue then writes the text to the log."""
+        return True
+
+    @property
+    def auth_values(self) -> tuple[str, ...]:
+        """Every form of the credential that could end up in text (the publish guard's values)."""
+        return (self.token,) if self.token else ()
+
     def ci_config_path(self) -> str:
         """The repo's CI config path when the host lets a project set its own ("": the default)."""
         return ""
@@ -85,8 +96,8 @@ class NotImplementedAdapter(HostAdapter):
 
     def _no(self, *_a, **_k):
         raise HostError(
-            f"{self.name} support is coming soon: this version of dawnfix does not publish to {self.name} "
-            "repos. GitHub and GitLab repos work today")
+            f"publishing to {self.name} repos is not in this version of dawnfix ({self.phase}). "
+            "GitHub, GitLab and Bitbucket Cloud repos work today")
 
     default_branch = find_existing = open_draft_change = open_issue = comment = _no
     changes_opened_today = push_url = _no

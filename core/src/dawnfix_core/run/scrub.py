@@ -12,6 +12,7 @@ CREDENTIAL_SHAPES = [
     r"github_pat_[A-Za-z0-9_]{20,}",
     r"glpat-[A-Za-z0-9_-]{20,}",
     r"ATBB[A-Za-z0-9_=-]{20,}",
+    r"AT(ATT|CTT)[A-Za-z0-9_=-]{20,}",  # Atlassian API tokens; Bitbucket repository/project/workspace access tokens
     r"(AKIA|ASIA)[0-9A-Z]{16}",
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
     r"dp_[A-Za-z0-9_-]{43}",

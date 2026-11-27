@@ -1,5 +1,5 @@
 // Bundles src/cli.mjs and everything it imports (Flare's sources, the .dawnfix.yml schema
-// from core/schema/, the GitLab template from templates/gitlab/ as its exact bytes, the yaml
+// from core/schema/, the GitLab and Bitbucket templates from templates/ as their exact bytes, the yaml
 // parser) into one file, dist/cli.js, with no runtime dependency:
 // `npx dawnfix` runs it with plain node 20 or newer. dist/cli.js is checked in.
 //
@@ -34,7 +34,8 @@ export async function bundle() {
     legalComments: 'none',
     banner: { js: BANNER },
     define: { __DAWNFIX_VERSION__: JSON.stringify(VERSION) },
-    // templates/gitlab/dawnfix.gitlab-ci.yml, byte for byte: init hashes it for `integrity:`.
+    // templates/gitlab/dawnfix.gitlab-ci.yml, byte for byte: init hashes it for `integrity:`;
+    // templates/bitbucket/bitbucket-pipelines.yml, written as it is.
     loader: { '.yml': 'binary' },
     write: false,
     logLevel: 'silent',
