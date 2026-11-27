@@ -7,12 +7,12 @@ Nothing is uploaded.
 ````text
 Create a skill named logbill that explains my CloudWatch Logs bill with Dawnfix Logbill.
 
-Install once (Python 3.11+), with REF a release tag or commit SHA of github.com/dawnfix/dawnfix
-that I give you:
+Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-logbill"
-  "$HOME/.cache/dawnfix-logbill/bin/pip" install \
-    "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core" \
-    "dawnfix-logbill @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=logbill"
+  "$HOME/.cache/dawnfix-logbill/bin/pip" install dawnfix
+(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
+"dawnfix-logbill @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=logbill", REF a release tag.)
+REF below is the release: v followed by what `logbill --version` prints.
 LB = "$HOME/.cache/dawnfix-logbill/bin/logbill".
 
 Paths like iam/... below are in github.com/dawnfix/dawnfix at REF; show a file if I ask.

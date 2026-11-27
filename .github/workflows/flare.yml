@@ -1,0 +1,257 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Part of Dawnfix (https://github.com/dawnfix/dawnfix), source available under the Functional
+# Source License 1.1, ALv2 Future License: see LICENSE at the root of that repo.
+#
+# Dawnfix Flare, the reusable workflow: the read-only audit of the Cloudflare account(s) the
+# token sees, plus the wrangler files in the calling repo, with flare/dist/cli.js and plain
+# node; and (with an Enterprise key) the data behind the new-exposure email and status page.
+#
+# Call it from .github/workflows/dawnfix-flare.yml in your repo (prompts/flare-ci.md):
+#
+#   name: dawnfix-flare
+#   on:
+#     schedule: [{ cron: "17 5 * * *" }]   # daily, before the 06:30 UTC digest
+#     workflow_dispatch:
+#   permissions: { contents: read }
+#   jobs:
+#     flare:
+#       uses: dawnfix/dawnfix/.github/workflows/flare.yml@v0
+#       secrets:
+#         FLARE_CLOUDFLARE_API_TOKEN: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN }}
+#         DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}   # optional
+#
+# The copy-it-yourself form is templates/github/workflows/dawnfix-flare.yml: the same job,
+# reading repository variables where this reads inputs.
+#
+# What goes where:
+#   - Hostnames, script, zone, token and secret names: only in this job's summary, in
+#     GitHub (in a public repo, job summaries are public: run this in a private repo).
+#   - The secret-name baseline (account id / script -> secret NAMES, never values) is kept
+#     between runs in the calling repo's Actions cache, instead of ~/.flare/state.json.
+#   - The hosted service gets $OUT/flare-ingest.json (dawnfix.flare/1,
+#     flare/schema/flare-ingest.schema.json): counts per check and severity, the number of
+#     accounts and a salted hash per account id, printed in the log before it is sent.
+#     With an Enterprise key only: POST {ingest-url}/v1/flare with the key as bearer token
+#     (read from stdin, never argv), X-Dawnfix-Repo and X-Dawnfix-Run: the new-exposure
+#     email and the status page link back to this run, where the names are.
+#   - The Cloudflare token never leaves GitHub's runner except to api.cloudflare.com.
+
+name: dawnfix-flare
+
+on:
+  workflow_call:
+    inputs:
+      fail-on:
+        description: "Fail the run when a finding is at or above this severity (critical|high|medium|low|info); default never (the email is the alert)"
+        type: string
+        default: never
+      ingest-url:
+        description: Base URL of the hosted service (Enterprise key only)
+        type: string
+        default: https://dawnfix.dev
+      core-ref:
+        description: "Fallback: a tag or commit SHA of dawnfix/dawnfix to run flare/dist/cli.js from instead of this release"
+        type: string
+        default: ""
+    secrets:
+      FLARE_CLOUDFLARE_API_TOKEN:
+        description: Read-only Cloudflare API token (flare/README.md, "Token")
+        required: true
+      FLARE_CLOUDFLARE_API_TOKEN_2:
+        description: Optional, a further Cloudflare account
+        required: false
+      FLARE_CLOUDFLARE_API_TOKEN_3:
+        description: Optional, a further Cloudflare account
+        required: false
+      FLARE_CLOUDFLARE_API_TOKEN_4:
+        description: Optional, a further Cloudflare account
+        required: false
+      FLARE_CLOUDFLARE_API_TOKEN_5:
+        description: Optional, a further Cloudflare account
+        required: false
+      DAWNFIX_ENTERPRISE_KEY:
+        description: Optional Dawnfix Enterprise key, sent only as the bearer token to the hosted service
+        required: false
+
+# ---- shared body: the same in .github/workflows/flare.yml and templates/github/workflows/dawnfix-flare.yml ----
+# One audit at a time per repo.
+concurrency:
+  group: dawnfix-flare-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions: {}
+
+# This release of github.com/dawnfix/dawnfix: the job runs flare/dist/cli.js from the tag
+# v<DAWNFIX_VERSION>. CORE_REF is the fallback: another tag or commit SHA to run it from.
+env:
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ inputs.core-ref }}
+
+jobs:
+  audit:
+    name: flare audit (read-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # checkout: flare.config.json and the repo's wrangler files
+    env:
+      FAIL_ON: ${{ inputs.fail-on || 'never' }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+
+      # The CLI, one bundled file, from the public repo at this release. A dot directory:
+      # the repo scan below skips it.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: dawnfix/dawnfix
+          ref: ${{ env.CORE_REF || format('v{0}', env.DAWNFIX_VERSION) }}
+          path: .dawnfix-flare
+          persist-credentials: false
+          sparse-checkout: flare/dist/cli.js
+          sparse-checkout-cone-mode: false
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+
+      - name: Paths
+        run: |
+          mkdir -p "$RUNNER_TEMP/flare/out" "$RUNNER_TEMP/flare/state"
+          {
+            echo "OUT=$RUNNER_TEMP/flare/out"
+            echo "STATE=$RUNNER_TEMP/flare/state/state.json"
+            echo "FLARE_CLI=$GITHUB_WORKSPACE/.dawnfix-flare/flare/dist/cli.js"
+          } >> "$GITHUB_ENV"
+
+      # Secret names between runs. Caches are immutable: every run saves under a new key and
+      # restores the newest one by prefix. Evicted after 7 days unused: the next run starts a
+      # new baseline (and reports no secret changes that once).
+      - name: Restore secret-name baseline
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/flare/state
+          key: dawnfix-flare-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: dawnfix-flare-state-v1-
+
+      # Exit 0 done, 1 a finding at/above FAIL_ON: both send the summary. 2 usage/config
+      # error: nothing is sent and the Result step fails the job with that code.
+      - name: flare audit
+        id: audit
+        env:
+          FLARE_TOKEN_1: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN }}
+          FLARE_TOKEN_2: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN_2 }}
+          FLARE_TOKEN_3: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN_3 }}
+          FLARE_TOKEN_4: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN_4 }}
+          FLARE_TOKEN_5: ${{ secrets.FLARE_CLOUDFLARE_API_TOKEN_5 }}
+        run: |
+          if [ -z "$FLARE_TOKEN_1$FLARE_TOKEN_2$FLARE_TOKEN_3$FLARE_TOKEN_4$FLARE_TOKEN_5" ]; then
+            echo "::error::FLARE_CLOUDFLARE_API_TOKEN is not set (gh secret set FLARE_CLOUDFLARE_API_TOKEN)"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -f "$FLARE_CLI" ]; then
+            echo "::error::flare/dist/cli.js not found at ref ${CORE_REF:-v$DAWNFIX_VERSION}"
+            echo "exit_code=2" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          args=(--token-env FLARE_TOKEN_1 --token-env FLARE_TOKEN_2 --token-env FLARE_TOKEN_3
+                --token-env FLARE_TOKEN_4 --token-env FLARE_TOKEN_5
+                --state "$STATE" --fail-on "$FAIL_ON" --no-color
+                --json "$OUT/flare.json" --summary "$GITHUB_STEP_SUMMARY" --ingest-out "$OUT/flare-ingest.json")
+          # This repo's wrangler files too, when it has any (matched to the deployed Workers).
+          if [ -n "$(find . \( -name node_modules -o -name '.?*' \) -prune -o \( -name wrangler.toml -o -name wrangler.json -o -name wrangler.jsonc \) -print | head -1)" ]; then
+            args+=(--repos "$GITHUB_WORKSPACE")
+          fi
+          set +e
+          # The table on stdout holds names: it goes to a file on the runner, not the log.
+          node "$FLARE_CLI" "${args[@]}" > "$OUT/flare.txt"
+          code=$?
+          set -e
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          case "$code" in
+            0|1)
+              if [ -f "$OUT/flare-ingest.json" ]; then
+                jq -r '"flare: " + ([.summary | to_entries[] | select(.value > 0) | "\(.value) \(.key)"] | if length == 0 then "no findings" else join(", ") end)' "$OUT/flare-ingest.json"
+              fi
+              echo "flare: the names are in this run's job summary"
+              if [ "$code" = 1 ]; then echo "flare: a finding is at or above $FAIL_ON"; fi ;;
+            *) echo "::error::flare exited $code (2: usage or config error, see the line above)" ;;
+          esac
+
+      - name: Save secret-name baseline
+        if: steps.audit.outputs.exit_code == '0' || steps.audit.outputs.exit_code == '1'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/flare/state
+          key: dawnfix-flare-state-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Send counts to the hosted service
+        if: steps.audit.outputs.exit_code == '0' || steps.audit.outputs.exit_code == '1'
+        env:
+          INGEST_BASE: ${{ inputs.ingest-url || 'https://dawnfix.dev' }}
+          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+        run: |
+          # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
+          need_key="Hosted Flare history (status page and new-exposure email) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
+          say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          doc="$OUT/flare-ingest.json"
+          if [ -z "$DAWNFIX_LICENSE" ]; then
+            say_need_key
+            exit 0
+          fi
+          case "$DAWNFIX_LICENSE" in
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+          esac
+          base="${INGEST_BASE%/}"
+          case "$base" in
+            https://*) ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/flare); nothing sent"; exit 0 ;;
+          esac
+          if ! jq -e '.schema == "dawnfix.flare/1"' "$doc" >/dev/null 2>&1; then
+            echo "::warning::$doc is not a dawnfix.flare/1 document; nothing sent"
+            exit 0
+          fi
+          echo "Sending exactly this (counts and hashed account ids only, no names, no token):"
+          jq -c . "$doc"
+          resp="$OUT/flare-response.json"
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+            curl --silent --show-error --proto '=https' \
+              --connect-timeout 5 --max-time 20 --retry 2 --retry-max-time 30 \
+              -K - -X POST "$base/v1/flare" \
+              -H "Content-Type: application/json" \
+              -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
+              -H "X-Dawnfix-Run: $GITHUB_RUN_ID" \
+              --data-binary "@$doc" \
+              -o "$resp" -w '%{http_code}') || code="${code:-000}"
+          case "$code" in
+            201)
+              if jq -e '.alert == true' "$resp" >/dev/null 2>&1; then
+                echo "::warning::flare: new exposure since the last run; the workspace was emailed (names: this run's job summary)"
+              else
+                echo "flare: HTTP 201, run recorded for the status page and the digest"
+              fi ;;
+            200) echo "flare: HTTP 200, this run was already recorded" ;;
+            402)
+              limit=$(jq -r '.limit // "?"' "$resp" 2>/dev/null || echo "?")
+              say_need_key "::warning::"; echo "flare: HTTP 402 ($limit), this key does not cover hosted reporting for this repo or account" ;;
+            401) say_need_key "::warning::"; echo "flare: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
+            403) say_need_key "::warning::"; echo "flare: HTTP 403, the Enterprise key or its subscription was revoked" ;;
+            400|413|415)
+              path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")
+              echo "::warning::flare rejected the payload (HTTP $code at $path); this run is missing from the alerts and the status page" ;;
+            429) echo "::warning::flare rate limited (HTTP 429); this run is missing from the alerts and the status page" ;;
+            *) echo "::warning::flare POST failed (HTTP $code); the alerts and the status page will miss this run" ;;
+          esac
+
+      - name: Result
+        env:
+          CODE: ${{ steps.audit.outputs.exit_code }}
+        run: |
+          case "$CODE" in
+            0) echo "audit done" ;;
+            1) echo "::error::a finding is at or above $FAIL_ON: see the job summary"; exit 1 ;;
+            "") echo "::error::flare did not run"; exit 1 ;;
+            *) exit "$CODE" ;;
+          esac

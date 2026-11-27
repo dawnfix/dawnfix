@@ -3,34 +3,40 @@
 # Source License 1.1, ALv2 Future License: see LICENSE at the root of that repo.
 #
 # Dawnfix: hourly read-only prod tick, and an agent run only when something new shows up.
-# What the agent does follows `autonomy` in .dawnfix.yml:
+# What the agent does follows `autonomy` in .dawnfix.yml (or vars.DAWNFIX_AUTONOMY):
 #   diagnose  - the diagnose job: an issue per new error (cause, impact, severity). No code.
 #   plan      - the fix job: an issue with the planned test and fix. No pull request.
 #   draft-pr  - the fix job: a failing test, the fix and a draft PR. Never merged by Dawnfix.
 #
+# The copy-it-yourself form. The short way is the reusable workflow: `npx dawnfix init` writes
+# a 15-line caller of dawnfix/dawnfix/.github/workflows/dawnfix.yml@v0, which runs exactly
+# these jobs and steps. Below the marker line this file is kept equal to that workflow.
+#
 # Setup (README.md, or prompts/setup.md for a coding agent): copy this file to
-# .github/workflows/dawnfix.yml and replace this placeholder (grep for it; none may survive):
-#   DAWNFIX_CORE_REF   tag or commit SHA of github.com/dawnfix/dawnfix. The read job installs
-#                      dawnfix-core from it, and the agent jobs fetch their instructions from
-#                      prompts/ci/diagnose.md and prompts/ci/fix.md at the same ref. Pin a
-#                      commit SHA to know exactly which instructions your agent gets.
-# and copy `schedule:` from .dawnfix.yml into the cron below (a workflow cannot read its own
-# trigger from a file at runtime; the read job warns when the two drift apart). Replace the
-# fix job's "Install project dependencies" step with your install command. Everything else
-# (autonomy, limits, report, the test command) is read from .dawnfix.yml at run time with
-# `dawnfix config --json`.
+# .github/workflows/dawnfix.yml and copy `schedule:` from .dawnfix.yml into the cron below (a
+# workflow cannot read its own trigger from a file at run time; the read job warns when the
+# two drift apart). Nothing else to replace: this file installs dawnfix==DAWNFIX_VERSION from
+# PyPI and loads the agent's instructions from prompts/ci/ at the tag v<DAWNFIX_VERSION> of
+# github.com/dawnfix/dawnfix. Everything else (autonomy, limits, report, the test command) is
+# read from .dawnfix.yml at run time with `dawnfix config --json`.
 #
 # Repository settings it relies on (Settings > Secrets and variables > Actions):
 #   vars.DAWNFIX_AWS_ROLE_ARN        role from infra/aws/dawnfix-read-role.yaml (optional)
 #   vars.DAWNFIX_AWS_REGION          region for STS; default us-east-1 (sources set their own)
 #   vars.DAWNFIX_GCP_WIF_PROVIDER    projects/<n>/locations/global/workloadIdentityPools/<pool>/providers/<p> (optional)
-#   vars.DAWNFIX_INGEST_URL          base URL of the hosted service; default https://dawnfix.dev
+#   vars.DAWNFIX_INSTALL_COMMAND     installs the project's dependencies before the fix agent
+#                                    runs, e.g. "npm ci" (optional)
+#   vars.DAWNFIX_AUTONOMY            overrides `autonomy` of .dawnfix.yml (optional)
 #   vars.DAWNFIX_MODEL               model for the agent; default "sonnet"
+#   vars.DAWNFIX_INGEST_URL          base URL of the hosted service; default https://dawnfix.dev
 #   vars.DAWNFIX_PR_APP_ID           customer-owned GitHub App used as PR author (optional)
+#   vars.DAWNFIX_CORE_REF            fallback: a tag or commit SHA of dawnfix/dawnfix to install
+#                                    dawnfix-core from git and load the prompts from (optional)
 #   secrets.ANTHROPIC_API_KEY        your own key (agent jobs only)
-#   secrets.DAWNFIX_LICENSE          optional Dawnfix Enterprise key, sent only as the bearer
-#                                    token to the hosted service. Without it nothing is sent
-#                                    anywhere and everything else works the same
+#   secrets.DAWNFIX_ENTERPRISE_KEY   optional Dawnfix Enterprise key (the older name
+#                                    DAWNFIX_LICENSE also works), sent only as the bearer token
+#                                    to the hosted service. Without it nothing is sent anywhere
+#                                    and everything else works the same
 #   secrets.DAWNFIX_PR_APP_PRIVATE_KEY  private key of that App (optional)
 #   secrets.DAWNFIX_PR_TOKEN         fine-grained PAT used as PR author (optional, if no App)
 #
@@ -41,19 +47,26 @@
 #              id-token, no contents write, no pull-requests. The agent can read the code and
 #              write its report under .dawnfix-run/out/; it has no shell. A plain shell step
 #              then files the issues.
-#   fix      - autonomy plan or draft-pr. Holds the repo write token and the Anthropic key. Has
-#              NO id-token permission, so it cannot mint cloud credentials, and runs no cloud
-#              auth step. It sees only the redacted findings.json artifact. The agent edits
-#              files inside a network sandbox and cannot commit or push; plain shell steps
-#              afterwards commit (failing test first, then the fix), push and open the draft
-#              PR from the agent's result.json.
+#   fix      - autonomy plan or draft-pr. Holds the Anthropic key and a read-only token: NO
+#              id-token permission, so it cannot mint cloud credentials, no contents write,
+#              and no cloud auth step. It sees only the redacted findings.json artifact. The
+#              agent edits files inside a network sandbox and cannot commit or push. Afterwards
+#              its tree is only data: its changes are read as a patch with a fresh checkout's
+#              .git (never its own, so no planted hook or config runs) by a step with no
+#              secrets, and uploaded as an artifact with its report files.
+#   publish  - a fresh runner, so nothing the agent left behind (files, processes) exists.
+#              A fresh checkout of the same commit; the patch committed there by a step with
+#              no secrets (failing test first, then the fix; .git, workflows, symlinks and
+#              submodules by mode, and binary files refused, every changed file scanned for
+#              credentials), and only the last step, with the PR author token, pushes the
+#              recorded commits to an explicit URL and opens the draft PR.
 #   pr-state - on a dawnfix/<fingerprint> PR being closed, tells the hosted service whether
 #              it was merged (Enterprise key only). No permissions, no cloud credentials.
 #
 # Hosted service calls, only with an Enterprise key (sent as a bearer token read from stdin,
 # never argv):
 #   POST {DAWNFIX_INGEST_URL}/v1/ingest   read job, the ingest.json of each tick
-#   POST {DAWNFIX_INGEST_URL}/v1/prs      fix job after opening a PR (open); pr-state job
+#   POST {DAWNFIX_INGEST_URL}/v1/prs      publish job after opening a PR (open); pr-state job
 #                                           when one is closed (merged | closed)
 
 name: dawnfix
@@ -76,6 +89,7 @@ on:
   pull_request:
     types: [closed]
 
+# ---- shared body: the same in .github/workflows/dawnfix.yml and templates/github/workflows/dawnfix.yml ----
 # One tick at a time per repo. Do not cancel a running fix; a queued tick waits. PR events
 # get their own group so they never displace a queued tick (or each other).
 concurrency:
@@ -85,9 +99,14 @@ concurrency:
 # Default for every job: nothing. Each job asks for exactly what it needs.
 permissions: {}
 
-# The pinned ref of github.com/dawnfix/dawnfix: dawnfix-core and the agent's instructions.
+# This release of github.com/dawnfix/dawnfix. The read job installs dawnfix==DAWNFIX_VERSION
+# from PyPI and the agent jobs load their instructions from prompts/ci/ at the tag
+# v<DAWNFIX_VERSION>: code and instructions always come from the same release.
+# CORE_REF is the fallback: a tag or commit SHA of github.com/dawnfix/dawnfix. When it is set,
+# dawnfix-core is installed from git at that ref and the instructions are loaded from it.
 env:
-  CORE_REF: DAWNFIX_CORE_REF
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:
   read:
@@ -106,9 +125,11 @@ jobs:
       timeout_minutes: ${{ steps.config.outputs.timeout_minutes }}
       fix_prs_per_day: ${{ steps.config.outputs.fix_prs_per_day }}
       test_command: ${{ steps.config.outputs.test_command }}
+    # baseline / dry_run: this workflow's inputs, or the caller's workflow_dispatch inputs of
+    # the same name (a manual run of the caller), so the caller need not pass them on.
     env:
-      BASELINE: ${{ inputs.baseline || false }}
-      DRY_RUN: ${{ inputs.dry_run || false }}
+      BASELINE: ${{ inputs.baseline || format('{0}', github.event.inputs.baseline) == 'true' }}
+      DRY_RUN: ${{ inputs.dry_run || format('{0}', github.event.inputs.dry_run) == 'true' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -125,37 +146,44 @@ jobs:
           echo "STATE=$RUNNER_TEMP/dawnfix/state.json" >> "$GITHUB_ENV"
           echo "OUT=$RUNNER_TEMP/dawnfix/out" >> "$GITHUB_ENV"
 
-      # The pinned ref must be v0.2.0 or later: earlier releases have no prompts/ci/, which the
-      # agent jobs load. Say so plainly here, before anything is installed.
-      - name: Check the pinned ref (DAWNFIX_CORE_REF)
+      # The release (or the core-ref fallback) must have prompts/ci/, which the agent jobs load.
+      # Say so plainly here, before anything is installed.
+      - name: Check the release ref
         run: |
-          case "$CORE_REF" in
-            DAWNFIX_CORE_REF|"")
-              echo "::error::Replace DAWNFIX_CORE_REF in .github/workflows/dawnfix.yml with a release tag (v0.2.0 or later) or a commit SHA of github.com/dawnfix/dawnfix"
+          ref="${CORE_REF:-v$DAWNFIX_VERSION}"
+          case "$ref" in
+            v|"")
+              echo "::error::DAWNFIX_VERSION is empty; this workflow file is damaged. Copy it again from github.com/dawnfix/dawnfix"
               exit 1 ;;
             *[!A-Za-z0-9._/-]*)
-              echo "::error::DAWNFIX_CORE_REF must be a tag or commit SHA of github.com/dawnfix/dawnfix, not '$CORE_REF'"
+              echo "::error::core-ref must be a tag or commit SHA of github.com/dawnfix/dawnfix, not '$ref'"
               exit 1 ;;
           esac
-          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${CORE_REF}/prompts/ci/diagnose.md"
+          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${ref}/prompts/ci/diagnose.md"
           code=$(curl --silent --proto '=https' --connect-timeout 5 --max-time 20 --retry 2 \
             -o /dev/null -w '%{http_code}' "$url") || code="${code:-000}"
           case "$code" in
-            200) echo "dawnfix/dawnfix@$CORE_REF has prompts/ci/: ok" ;;
+            200) echo "dawnfix/dawnfix@$ref has prompts/ci/: ok" ;;
             404)
-              echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/ at '$CORE_REF': that ref does not exist (yet) or is older than v0.2.0. This workflow needs v0.2.0 or later. Pick a tag or commit from https://github.com/dawnfix/dawnfix/tags and set DAWNFIX_CORE_REF to it"
+              echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/ at '$ref': that ref does not exist (yet) or is older than v0.2.0. Use a release from https://github.com/dawnfix/dawnfix/tags"
               exit 1 ;;
-            *) echo "::warning::could not check dawnfix/dawnfix@$CORE_REF (HTTP $code); going on" ;;
+            *) echo "::warning::could not check dawnfix/dawnfix@$ref (HTTP $code); going on" ;;
           esac
 
-      - name: Install dawnfix-core
+      # From PyPI by default (dawnfix==DAWNFIX_VERSION: core and the tools, one package); from
+      # git at core-ref when that is set.
+      - name: Install dawnfix
         env:
           WANT_GCP: ${{ vars.DAWNFIX_GCP_WIF_PROVIDER != '' }}
         run: |
           extra=""
           if [ "$WANT_GCP" = "true" ]; then extra="[gcp]"; fi
-          python -m pip install --disable-pip-version-check --quiet \
-            "dawnfix-core${extra} @ git+https://github.com/dawnfix/dawnfix@${CORE_REF}#subdirectory=core"
+          if [ -n "$CORE_REF" ]; then
+            spec="dawnfix-core${extra} @ git+https://github.com/dawnfix/dawnfix@${CORE_REF}#subdirectory=core"
+          else
+            spec="dawnfix${extra}==${DAWNFIX_VERSION}"
+          fi
+          python -m pip install --disable-pip-version-check --quiet "$spec"
           dawnfix --version
 
       # `dawnfix config --json` prints the resolved config (defaults filled in), so this
@@ -165,13 +193,25 @@ jobs:
         id: config
         env:
           TRIGGER_CRON: ${{ github.event.schedule }}
+          AUTONOMY_INPUT: ${{ vars.DAWNFIX_AUTONOMY }}
         run: |
           dawnfix validate --config .dawnfix.yml
           mkdir -p "$OUT"
           cfg="$OUT/config.json"
           dawnfix config --config .dawnfix.yml --json > "$cfg"
+          autonomy=$(jq -r '.autonomy' "$cfg")
+          if [ -n "$AUTONOMY_INPUT" ]; then
+            case "$AUTONOMY_INPUT" in
+              diagnose|plan|draft-pr) ;;
+              *) echo "::error::autonomy must be diagnose, plan or draft-pr, not '$AUTONOMY_INPUT'"; exit 2 ;;
+            esac
+            if [ "$AUTONOMY_INPUT" != "$autonomy" ]; then
+              echo "::notice::autonomy $AUTONOMY_INPUT from the workflow; .dawnfix.yml says $autonomy"
+            fi
+            autonomy="$AUTONOMY_INPUT"
+          fi
           {
-            echo "autonomy=$(jq -r '.autonomy' "$cfg")"
+            echo "autonomy=$autonomy"
             echo "issues=$(jq -r '.report.issues' "$cfg")"
             for k in max_turns timeout_minutes fix_prs_per_day; do
               echo "$k=$(jq -r --arg k "$k" '.limits[$k] | floor' "$cfg")"
@@ -182,12 +222,12 @@ jobs:
           if [ -n "$TRIGGER_CRON" ] && [ "$(echo "$TRIGGER_CRON" | xargs)" != "$(echo "$schedule" | xargs)" ]; then
             echo "::warning::workflow cron '$TRIGGER_CRON' differs from .dawnfix.yml schedule '$schedule'; edit the workflow's cron"
           fi
-          if [ "$(jq -r '.autonomy' "$cfg")" = "draft-pr" ] && [ "$(jq -r '.test.command // ""' "$cfg")" = "" ]; then
+          if [ "$autonomy" = "draft-pr" ] && [ "$(jq -r '.test.command // ""' "$cfg")" = "" ]; then
             echo "::warning::autonomy is draft-pr but .dawnfix.yml has no test.command; the fix job can only open issues"
           fi
 
       # Cloud credentials: short-lived, read-only, scoped to this repo's default branch by the
-      # role's trust policy. Skipped entirely when the repo variable is not set.
+      # role's trust policy. Skipped entirely when no role is given.
       - name: AWS credentials (OIDC, read-only role)
         if: vars.DAWNFIX_AWS_ROLE_ARN != ''
         uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
@@ -279,16 +319,16 @@ jobs:
 
       # The only data that leaves the customer's accounts: ingest.json (schema/ingest.schema.json:
       # enums, counts, fingerprint hashes, route templates). Never printed here; the dry run
-      # above is the place to see it. Nothing is sent without DAWNFIX_LICENSE (an Enterprise
-      # key); without it this step only says so, and the tick, the agent and the issues or PRs
-      # work the same. A failed POST
-      # warns and does not block the fix job. The service is idempotent on (repo, run), so
-      # curl's retries and a re-run of this workflow do not double count.
+      # above is the place to see it. Nothing is sent without an Enterprise key
+      # (DAWNFIX_ENTERPRISE_KEY); without it this step only says so, and the tick, the agent
+      # and the issues or PRs work the same. A failed POST warns and does not block the fix
+      # job. The service is idempotent on (repo, run), so curl's retries and a re-run of this
+      # workflow do not double count.
       - name: Send summary to the hosted service
         if: steps.tick.outcome == 'success' && env.DRY_RUN != 'true'
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted reporting (status page and digest) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
@@ -298,12 +338,12 @@ jobs:
             exit 0
           fi
           case "$DAWNFIX_LICENSE" in
-            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
           case "$base" in
             https://*) ;;
-            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL (the workflow appends /v1/ingest); nothing sent"; exit 0 ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/ingest); nothing sent"; exit 0 ;;
           esac
           resp="$OUT/ingest-response.json"
           # The bearer header is read from stdin (-K -), so the key is never in argv.
@@ -320,7 +360,7 @@ jobs:
             201) echo "ingest: HTTP 201, tick recorded" ;;
             200) echo "ingest: HTTP 200, this run was already recorded" ;;
             402) say_need_key "::warning::"; echo "ingest: HTTP 402, this key does not cover hosted reporting for this repo" ;;
-            401) say_need_key "::warning::"; echo "ingest: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_LICENSE secret" ;;
+            401) say_need_key "::warning::"; echo "ingest: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
             403) say_need_key "::warning::"; echo "ingest: HTTP 403, the Enterprise key or its subscription was revoked" ;;
             400|413|415)
               path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")
@@ -336,12 +376,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ fromJSON(needs.read.outputs.timeout_minutes) }}
     # No id-token: this job cannot obtain cloud credentials even if the agent is tricked
-    # into trying. issues: write is for "comment instead of fix" (spec 4.3) and autonomy
-    # plan, which reports as an issue instead of a PR.
+    # into trying. No write permission either: the agent's changes leave this job only as an
+    # artifact, and the publish job (a fresh runner) commits, pushes and opens PRs and issues.
+    # pull-requests: read is for the daily PR cap.
     permissions:
-      contents: write
-      pull-requests: write
-      issues: write
+      contents: read
+      pull-requests: read
+    outputs:
+      captured: ${{ steps.capture.outputs.captured }}
+      base_sha: ${{ steps.capture.outputs.base_sha }}
+      budget: ${{ steps.cap.outputs.budget }}
     env:
       TEST_CMD: ${{ needs.read.outputs.test_command }}
       RUN_DIR: .dawnfix-run
@@ -382,11 +426,15 @@ jobs:
             echo "budget=$budget" >> "$GITHUB_OUTPUT"
           fi
 
-      # Runs before the agent, outside the sandbox, with normal network. The wizard replaces
-      # this with the repo's install command (npm ci, pip install -e ., ...).
+      # Runs before the agent, outside the sandbox, with normal network: the repo's install
+      # command (npm ci, pip install -e ., ...), from the install-command setting.
       - name: Install project dependencies
         if: steps.cap.outputs.capped == 'false'
-        run: echo "no install step configured"
+        env:
+          INSTALL_COMMAND: ${{ vars.DAWNFIX_INSTALL_COMMAND }}
+        run: |
+          if [ -z "$INSTALL_COMMAND" ]; then echo "no install command configured"; exit 0; fi
+          bash -e -c "$INSTALL_COMMAND"
 
       - name: Sandbox prerequisites (bubblewrap, socat)
         if: steps.cap.outputs.capped == 'false'
@@ -401,9 +449,10 @@ jobs:
             sudo systemctl reload apparmor
           fi
 
-      # The agent's instructions: prompts/ci/fix.md from github.com/dawnfix/dawnfix at the
-      # pinned ref (the same one dawnfix-core comes from). Fetched before the agent starts,
-      # outside the sandbox, and logged with its SHA-256 so every run says what it was told.
+      # The agent's instructions: prompts/ci/fix.md from github.com/dawnfix/dawnfix at this
+      # release's tag, or at core-ref (the same ref dawnfix-core comes from). Fetched before the
+      # agent starts, outside the sandbox, and logged with its SHA-256 so every run says what it
+      # was told.
       - name: Load the agent's instructions (prompts/ci/fix.md)
         id: instructions
         if: steps.cap.outputs.capped == 'false'
@@ -411,18 +460,19 @@ jobs:
           PROMPT_NAME: fix
         run: |
           file="$RUNNER_TEMP/dawnfix-instructions.md"
-          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${CORE_REF}/prompts/ci/${PROMPT_NAME}.md"
+          ref="${CORE_REF:-v$DAWNFIX_VERSION}"
+          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${ref}/prompts/ci/${PROMPT_NAME}.md"
           code=$(curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 30 \
             --retry 2 -o "$file" -w '%{http_code}' "$url") || code="${code:-000}"
           case "$code" in
             200) ;;
-            404) echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/$PROMPT_NAME.md at '$CORE_REF': that ref does not exist (yet) or is older than v0.2.0. Set DAWNFIX_CORE_REF to v0.2.0 or later: https://github.com/dawnfix/dawnfix/tags"; exit 1 ;;
+            404) echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/$PROMPT_NAME.md at '$ref': that ref does not exist (yet) or is older than v0.2.0. Use a release from https://github.com/dawnfix/dawnfix/tags"; exit 1 ;;
             *) echo "::error::could not load $url (HTTP $code); the agent does not run without its instructions"; exit 1 ;;
           esac
           if ! head -1 "$file" | grep -qxF "<!-- dawnfix:ci-prompt $PROMPT_NAME -->"; then
             echo "::error::$url is not the Dawnfix $PROMPT_NAME prompt"; exit 1
           fi
-          echo "instructions: prompts/ci/$PROMPT_NAME.md at $CORE_REF, sha256 $(sha256sum "$file" | cut -d' ' -f1)"
+          echo "instructions: prompts/ci/$PROMPT_NAME.md at $ref, sha256 $(sha256sum "$file" | cut -d' ' -f1)"
           delim="DAWNFIX_PROMPT_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           { echo "text<<$delim"; cat "$file"; echo; echo "$delim"; } >> "$GITHUB_OUTPUT"
 
@@ -457,7 +507,10 @@ jobs:
                   "WebFetch", "WebSearch",
                   "Bash(curl:*)", "Bash(wget:*)", "Bash(nc:*)", "Bash(ssh:*)",
                   "Bash(git:*)", "Bash(gh:*)",
-                  "Read(./.git/**)", "Edit(./.git/**)",
+                  "Read(./.git/**)", "Edit(./.git/**)", "Write(./.git/**)",
+                  "Edit(./.dawnfix-publish/**)", "Write(./.dawnfix-publish/**)",
+                  "Edit(~/**)", "Write(~/**)", "Edit(//tmp/**)", "Write(//tmp/**)",
+                  "Edit(//home/**)", "Write(//home/**)", "Edit(//etc/**)", "Write(//etc/**)",
                   "Read(~/.gitconfig)", "Read(~/.config/gh/**)",
                   "Edit(./.github/**)", "Edit(./.dawnfix.yml)",
                   "Edit(./.claude/**)", "Edit(./.mcp.json)"
@@ -503,17 +556,120 @@ jobs:
             ${{ env.RUN_DIR }}/out/<fingerprint>.md body per entry. The workflow commits the
             test, then the fix, and opens the draft PR or issue.
 
-      # PRs opened with GITHUB_TOKEN do not trigger other workflows (GitHub's loop guard), so
-      # the customer's CI would never run on them. A customer-owned GitHub App or a
-      # fine-grained PAT (Contents RW + Pull requests RW on this repo only) as PR author fixes
-      # that. Minted only now, after the agent has exited.
-      - name: PR author token (customer GitHub App)
-        id: app-token
-        if: steps.claude.outcome == 'success' && vars.DAWNFIX_PR_APP_ID != ''
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+      # From here on the agent's working tree is data, never code. Its .git may have been
+      # changed (hooks, core.fsmonitor, filters: the test command can run anything inside the
+      # sandbox), and the agent's processes may still be running, so this job only captures
+      # its changes and hands them on as an artifact:
+      #
+      #   1. a fresh checkout of the same commit in .dawnfix-capture (no credentials kept), for
+      #      a .git the agent never saw;
+      #   2. "Capture" (no secrets): the agent's file changes as a patch, read with that fresh
+      #      .git (the agent's .git is never used), plus its report files, regular files only;
+      #   3. the patch and the report uploaded as the dawnfix-fix artifact.
+      #
+      # The publish job below takes it from there on a fresh runner, where nothing the agent
+      # left behind (files, processes, a changed .git) exists.
+      - name: Clear the capture directory
+        if: steps.claude.outcome == 'success'
+        run: |
+          # The agent ran before this directory exists; anything there now is its doing.
+          rm -rf .dawnfix-capture
+
+      - name: Fresh checkout for the capture
+        if: steps.claude.outcome == 'success'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
-          app-id: ${{ vars.DAWNFIX_PR_APP_ID }}
-          private-key: ${{ secrets.DAWNFIX_PR_APP_PRIVATE_KEY }}
+          path: .dawnfix-capture
+          persist-credentials: false
+
+      - name: Capture the agent's changes (no secrets)
+        id: capture
+        if: steps.claude.outcome == 'success'
+        env:
+          PUB_DIR: .dawnfix-capture
+          CAPTURE: ${{ runner.temp }}/dawnfix-capture
+        run: |
+          rm -rf "$CAPTURE"
+          mkdir -p "$CAPTURE/run"
+          # The fresh checkout's .git with the agent's tree as work tree, a separate index, no
+          # global or system config, no hooks, no fsmonitor, no external diff or textconv.
+          g() {
+            GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_INDEX_FILE="$RUNNER_TEMP/dawnfix-agent.index" \
+              git --git-dir="$PUB_DIR/.git" --work-tree=. -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"
+          }
+          g read-tree HEAD
+          g add -A -- . ":(exclude)$RUN_DIR" ":(exclude)$PUB_DIR"
+          g diff --cached --binary --no-ext-diff --no-textconv --no-renames HEAD > "$CAPTURE/agent.patch"
+          echo "the agent changed $(grep -c '^diff --git ' "$CAPTURE/agent.patch" || true) file(s)"
+          # Its report: regular files only. A symlink here could point at anything on the runner.
+          if [ -d "$RUN_DIR/out" ]; then
+            find "$RUN_DIR/out" -maxdepth 1 -type l -exec echo "::warning::ignored a symlink in the agent's report: {}" \;
+            find "$RUN_DIR/out" -maxdepth 1 -type f \( -name result.json -o -name '*.md' \) -exec cp {} "$CAPTURE/run/" \;
+          fi
+          echo "base_sha=$(g rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "captured=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the agent's changes
+        if: steps.capture.outcome == 'success'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dawnfix-fix
+          path: ${{ runner.temp }}/dawnfix-capture/
+          retention-days: 3
+          if-no-files-found: error
+          overwrite: true
+
+  # The agent's changes, published on a fresh runner: nothing from the fix job's runner
+  # (left-over processes or files, the agent's .git) exists here. This job never runs the
+  # project's code and holds no secret until its last step.
+  #
+  #   1. a fresh checkout of the commit the fix job started from (no credentials kept);
+  #   2. the dawnfix-fix artifact (the patch and the report) and findings.json from the read job;
+  #   3. "Commit" (no secrets): the patch applied in the fresh checkout, refused outright if it
+  #      touches .git, .github/workflows, a symlink or a submodule (by the old and the new mode
+  #      of every path), or holds a binary file; each PR as two commits on
+  #      dawnfix/<fingerprint>, its tip SHA recorded; the full content of every file scanned
+  #      for credentials; a plan of PRs and issues;
+  #   4. "Publish": the only step with the PR author token. It pushes exactly the planned
+  #      commits to an explicit URL, ignoring the checkout's own config, and opens the draft
+  #      PRs and issues.
+  publish:
+    name: publish (fresh runner, no agent)
+    needs: [read, fix]
+    if: needs.fix.outputs.captured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # issues: write is for "comment instead of fix" (spec 4.3) and autonomy plan, which
+    # reports as an issue instead of a PR.
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      TEST_CMD: ${{ needs.read.outputs.test_command }}
+      AUTONOMY: ${{ needs.read.outputs.autonomy }}
+      ISSUES: ${{ needs.read.outputs.issues }}
+    steps:
+      - name: Fresh checkout for publishing
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          path: .dawnfix-publish
+          ref: ${{ needs.fix.outputs.base_sha }}
+          persist-credentials: false
+
+      - name: The agent's changes, as the fix job captured them
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: dawnfix-fix
+          path: ${{ runner.temp }}/dawnfix-publish
+
+      # findings.json straight from the read job: the copy in the agent's tree was writable
+      # by the agent.
+      - name: Findings, as the read job wrote them
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: dawnfix-findings
+          path: ${{ runner.temp }}/dawnfix-publish/findings
 
       # result.json (written by the agent; prompts/ci/fix.md step 9):
       #   {"schema": "dawnfix.result/1", "results": [
@@ -525,25 +681,22 @@ jobs:
       # For each "pr" entry, on a fresh dawnfix/<fingerprint> branch from the default branch:
       # commit 1 = test_files only (the failing test), commit 2 = fix_files (the fix), so the
       # PR shows the test failing before the fix. A pr entry that cannot be published (autonomy,
-      # budget, no test command, files not changed or claimed twice, a closed PR for the same
-      # fingerprint) is reported as an issue instead.
-      - name: Publish (draft PRs or issues)
-        if: steps.claude.outcome == 'success'
+      # budget, no test command, files not changed or claimed twice) is planned as an issue.
+      - name: Commit (no secrets)
+        id: commit
         env:
-          PR_TOKEN: ${{ steps.app-token.outputs.token || secrets.DAWNFIX_PR_TOKEN || github.token }}
-          ISSUE_TOKEN: ${{ github.token }}
-          SCAN_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
-          SCAN_PAT: ${{ secrets.DAWNFIX_PR_TOKEN }}
-          SCAN_GH: ${{ github.token }}
-          SCAN_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
-          INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          BUDGET: ${{ steps.cap.outputs.budget }}
-          BASE: ${{ github.event.repository.default_branch }}
+          PUB_DIR: .dawnfix-publish
+          CAPTURE: ${{ runner.temp }}/dawnfix-publish
+          BASE_SHA: ${{ needs.fix.outputs.base_sha }}
+          BUDGET: ${{ needs.fix.outputs.budget }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          result="$RUN_DIR/out/result.json"
-          findings="$RUN_DIR/findings.json"
+          result="$CAPTURE/run/result.json"
+          findings="$CAPTURE/findings/findings.json"
+          patch="$CAPTURE/agent.patch"
+          plan="$CAPTURE/plan.tsv"
+          : > "$plan"
+          echo 0 > "$CAPTURE/failed"
           if [ ! -f "$result" ]; then
             echo "::warning::the fix run wrote no result.json; nothing published"
             exit 0
@@ -552,73 +705,64 @@ jobs:
             echo "::error::result.json is not a dawnfix.result/1 document; nothing published"
             exit 1
           fi
-          protected='^(\.github/|\.dawnfix\.yml$|CODEOWNERS$|docs/CODEOWNERS$|\.claude/|\.mcp\.json$|\.gitmodules$|\.husky/|CLAUDE(\.local)?\.md$|\.dawnfix-run/)'
+          protected='^(\.github/|\.dawnfix\.yml$|CODEOWNERS$|docs/CODEOWNERS$|\.claude/|\.mcp\.json$|\.gitmodules$|\.husky/|CLAUDE(\.local)?\.md$|\.dawnfix-run/|\.dawnfix-publish/)'
           creds='sk-ant-[A-Za-z0-9_-]{10,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|(AKIA|ASIA)[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----|dp_[A-Za-z0-9_-]{43}'
+          cd "$PUB_DIR"
+          g() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+          commit() { g -c user.name="dawnfix" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q --no-verify -m "$1"; }
+
+          # Refused outright, nothing published: a path in .git or .github/workflows, a
+          # symlink or submodule, a binary file. Tests and fixes are plain text files.
+          refuse() { echo "::error::the agent's changes $1; nothing published"; exit 1; }
+          if ! [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || [ "$(g rev-parse HEAD)" != "$BASE_SHA" ]; then
+            echo "::error::the checkout is not the commit the fix job started from; nothing published"
+            exit 1
+          fi
+          if [ -s "$patch" ]; then
+            while IFS= read -r -d '' line; do
+              f="${line#*$'\t'}"; f="${f#*$'\t'}"; counts="${line%"$f"}"
+              case "/$f/" in */.git/*) refuse "touch a .git path ($f)" ;; esac
+              case "$f" in .github/workflows/*) refuse "touch a workflow ($f)" ;; esac
+              case "$counts" in -$'\t'-$'\t') refuse "include a binary file ($f)" ;; esac
+            done < <(g apply --numstat -z "$patch")
+            # An early refusal on the patch's mode lines; the check after applying is the one
+            # that counts.
+            if grep -Eq '^(new file mode|new mode|old mode|deleted file mode) (120000|160000)$' "$patch"; then
+              refuse "add, change or remove a symlink or submodule"
+            fi
+            g apply --cached --whitespace=nowarn "$patch"
+            # By mode, for every changed path: a symlink (120000) or submodule (160000) on
+            # either side is refused. That also catches a patch that only retargets an
+            # existing symlink or bumps a submodule, whose only mode is on its index line.
+            while IFS= read -r -d '' meta && IFS= read -r -d '' f; do
+              read -r old_mode new_mode _ <<< "${meta#:}"
+              case " $old_mode $new_mode " in
+                *" 120000 "*|*" 160000 "*) refuse "add, change or remove a symlink or submodule ($f)" ;;
+              esac
+            done < <(g diff --cached --raw -z --no-renames HEAD)
+          fi
+          base_sha=$(g rev-parse HEAD)
+          snap=$(g write-tree)
+          changed=$(g diff --cached --name-only "$base_sha")
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            if g cat-file -e ":$f" 2>/dev/null && [ "$(g cat-file -p ":$f" | tr -d '\000' | wc -c)" != "$(g cat-file -p ":$f" | wc -c)" ]; then
+              refuse "include a binary file ($f)"
+            fi
+          done <<< "$changed"
+          g reset -q --hard "$base_sha"
+          claimed=""
           failed=0
           prs=0
-
-          # Tell the hosted service a PR is open (POST /v1/prs). Warns, never fails the job.
-          post_pr() { # fingerprint pr_url state
-            [ -n "$DAWNFIX_LICENSE" ] || return 0
-            case "$DAWNFIX_LICENSE" in *[!A-Za-z0-9_-]*) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; return 0 ;; esac
-            local base="${INGEST_BASE%/}" code
-            case "$base" in https://*) ;; *) echo "::warning::DAWNFIX_INGEST_URL must be https; PR state not sent"; return 0 ;; esac
-            code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
-              curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
-                -K - -X POST "$base/v1/prs" \
-                -H "Content-Type: application/json" -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
-                --data-binary "$(jq -cn --arg f "$1" --arg u "$2" --arg s "$3" '{fingerprint: $f, pr_url: $u, state: $s}')" \
-                -o /dev/null -w '%{http_code}') || code="${code:-000}"
-            case "$code" in
-              200) echo "service: PR state $3 recorded" ;;
-              401|402|403) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; echo "service: HTTP $code, the Enterprise key was not accepted" ;;
-              404) echo "::warning::service does not know this repo or finding yet (HTTP 404); the ingest of this run may have failed" ;;
-              *) echo "::warning::PR state POST failed (HTTP $code)" ;;
-            esac
-          }
-
-          # Everything the agent left in the working tree, as a tree object; then back to a
-          # clean default branch. Each PR takes only its own files from this snapshot.
-          base_sha=$(git rev-parse HEAD)
-          git add -A
-          snap=$(git write-tree)
-          git reset -q
-          git checkout -q -- . && git clean -fdq
-          changed=$(git diff --name-only "$base_sha" "$snap")
-          claimed=""
-
-          labels_ready=false
-          ensure_labels() {
-            if [ "$labels_ready" = true ]; then return 0; fi
-            GH_TOKEN="$ISSUE_TOKEN" gh label create dawnfix --color 5319E7 --description "Opened by Dawnfix" > /dev/null 2>&1 || true
-            GH_TOKEN="$ISSUE_TOKEN" gh label create AI-generated --color BFD4F2 --description "AI-generated change (EU AI Act Art. 50)" > /dev/null 2>&1 || true
-            labels_ready=true
-          }
-
-          publish_issue() { # fingerprint title body
-            if [ "$ISSUES" != "github" ]; then
-              echo "report.issues is $ISSUES; GitHub issue for $1 skipped (adapter not in this version)"
-              return 0
-            fi
-            ensure_labels
-            local existing
-            existing=$(GH_TOKEN="$ISSUE_TOKEN" gh issue list --state open --label dawnfix --search "$1 in:title" \
-              --json number --jq '.[0].number // empty')
-            if [ -n "$existing" ]; then
-              GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$existing" --body-file "$3"
-            else
-              GH_TOKEN="$ISSUE_TOKEN" gh issue create --title "dawnfix: $2 ($1)" --label dawnfix --label AI-generated --body-file "$3"
-            fi
-          }
 
           # Copy the given paths from the snapshot into the index (deleted ones are removed).
           take() {
             local f
             for f in "$@"; do
-              if git cat-file -e "$snap:$f" 2>/dev/null; then
-                git checkout -q "$snap" -- "$f"
+              if g cat-file -e "$snap:$f" 2>/dev/null; then
+                g checkout -q "$snap" -- "$f"
               else
-                git rm -q --cached --ignore-unmatch -- "$f"
+                g rm -q --cached --ignore-unmatch -- "$f"
                 rm -f -- "$f"
               fi
             done
@@ -633,6 +777,11 @@ jobs:
               if ! printf '%s\n' "$changed" | grep -qxF -- "$f"; then echo "path '$f' was not changed"; return; fi
               if printf '%s\n' "$claimed" | grep -qxF -- "$f"; then echo "path '$f' is claimed by another fingerprint"; return; fi
             done
+          }
+
+          plan_entry() { # fingerprint action branch title body sha
+            # No empty field: read splits on tabs and would merge two of them.
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5" "$6" >> "$plan"
           }
 
           seen=""
@@ -653,7 +802,7 @@ jobs:
             action=$(jq -r '.action // "none"' <<< "$entry")
             title=$(jq -r '.title // "dawnfix finding"' <<< "$entry" | tr -cd '[:print:]' | cut -c1-100)
             [ -n "$title" ] || title="dawnfix finding"
-            body="$RUN_DIR/out/$fp.md"
+            body="$CAPTURE/run/$fp.md"
             [ -f "$body" ] || echo "(no body written)" > "$body"
             grep -q "dawnfix:fingerprint=$fp" "$body" || printf '\n<!-- dawnfix:fingerprint=%s -->\n' "$fp" >> "$body"
             printf '\n\n---\nOpened by Dawnfix. AI-generated: review before merging. Run: %s\n' "$RUN_URL" >> "$body"
@@ -682,17 +831,6 @@ jobs:
                 echo "::error::$fp: the fix touched protected paths ($why); nothing pushed"
                 failed=1
               fi
-              if [ -z "$why" ]; then
-                prior=$(GH_TOKEN="$ISSUE_TOKEN" gh pr list --state all --head "dawnfix/$fp" --json number,state --jq '.[0] | select(.) | "\(.number) \(.state)"')
-                if [ -n "$prior" ]; then
-                  if [ "${prior#* }" = "OPEN" ]; then
-                    GH_TOKEN="$ISSUE_TOKEN" gh pr comment "${prior%% *}" --body-file "$body"
-                    echo "$fp: PR #${prior%% *} is already open; commented the new analysis there"
-                    continue
-                  fi
-                  why="a PR for this fingerprint was closed before (#${prior%% *}); not recreated"
-                fi
-              fi
               if [ -n "$why" ]; then
                 echo "$fp: reporting as an issue instead of a PR: $why"
                 printf '\n## Why no PR\n%s\n' "$why" >> "$body"
@@ -701,58 +839,197 @@ jobs:
             fi
 
             if [ "$action" = "issue" ]; then
-              publish_issue "$fp" "$title" "$body"
+              plan_entry "$fp" issue - "$title" "$body" -
               continue
             fi
 
             # pr: two commits on a fresh branch from the default branch.
             branch="dawnfix/$fp"
-            git checkout -q -B "$branch" "$base_sha"
+            g checkout -q -B "$branch" "$base_sha"
             take "${tests[@]}"
-            git -c user.name="dawnfix" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "test: reproduce $title (dawnfix $fp)"
+            commit "test: reproduce $title (dawnfix $fp)"
             take "${fixes[@]}"
-            git -c user.name="dawnfix" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-              commit -q -m "fix: $title (dawnfix $fp)"
+            commit "fix: $title (dawnfix $fp)"
 
-            # Refuse to publish anything that looks like a credential (match lines are not printed).
-            added=$(git diff -U0 "$base_sha" HEAD | grep -E '^\+' || true)
+            # Nothing that looks like a credential, anywhere in the files this PR changes: the
+            # whole file, not only the changed lines (matches are not printed).
             leak=false
-            if printf '%s' "$added" | grep -Eq -- "$creds"; then leak=true; fi
-            for v in "$SCAN_ANTHROPIC" "$SCAN_PAT" "$SCAN_GH" "$SCAN_LICENSE"; do
-              if [ -n "$v" ] && printf '%s' "$added" | grep -qF -- "$v"; then leak=true; fi
+            for f in "${tests[@]}" "${fixes[@]}"; do
+              if g cat-file -e "HEAD:$f" 2>/dev/null && g cat-file -p "HEAD:$f" | grep -Eq -- "$creds"; then leak=true; fi
             done
             if [ "$leak" = true ]; then
-              echo "::error::$fp: the diff contains something that looks like a credential; nothing pushed"
+              echo "::error::$fp: a changed file contains something that looks like a credential; nothing pushed"
               failed=1
-              git checkout -q --detach "$base_sha"
+              g checkout -q --detach "$base_sha"
+              g branch -q -D "$branch"
               continue
             fi
 
             for f in "${tests[@]}" "${fixes[@]}"; do claimed="$claimed"$'\n'"$f"; done
-            git remote set-url origin "https://x-access-token:${PR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-            if ! git push -q origin "HEAD:refs/heads/$branch"; then
+            prs=$((prs + 1))
+            # The commit the Publish step may push for this branch, and nothing else.
+            plan_entry "$fp" pr "$branch" "$title" "$body" "$(g rev-parse HEAD)"
+            [ "$(jq -r '.also_issue // false' <<< "$entry")" = "true" ] && plan_entry "$fp" also-issue "$branch" "$title" "$body" -
+            g checkout -q --detach "$base_sha"
+          done
+
+          unclaimed=$(printf '%s\n' "$changed" | grep -vxF -f <(printf '%s\n' "$claimed" | sed '/^$/d') || true)
+          if [ -n "$changed" ] && [ -n "$unclaimed" ] && [ "$prs" -gt 0 ]; then
+            echo "::notice::changed files not claimed by any planned PR were dropped: $(printf '%s' "$unclaimed" | tr '\n' ' ')"
+          fi
+          echo "$failed" > "$CAPTURE/failed"
+
+      # PRs opened with GITHUB_TOKEN do not trigger other workflows (GitHub's loop guard), so
+      # the customer's CI would never run on them. A customer-owned GitHub App or a
+      # fine-grained PAT (Contents RW + Pull requests RW on this repo only) as PR author fixes
+      # that. Minted only now, after the agent has exited.
+      - name: PR author token (customer GitHub App)
+        id: app-token
+        if: steps.commit.outcome == 'success' && vars.DAWNFIX_PR_APP_ID != ''
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.DAWNFIX_PR_APP_ID }}
+          private-key: ${{ secrets.DAWNFIX_PR_APP_PRIVATE_KEY }}
+
+      # The only step with the PR author token. It runs git only in the fresh checkout, whose
+      # .git the agent never saw, and pushes exactly the commits the Commit step planned, to
+      # an explicit URL: no remote, credential helper, include or hook of the checkout's config
+      # is used, and a config that could redirect the push is refused.
+      - name: Publish (draft PRs or issues)
+        if: steps.commit.outcome == 'success'
+        env:
+          PUB_DIR: .dawnfix-publish
+          CAPTURE: ${{ runner.temp }}/dawnfix-publish
+          PR_TOKEN: ${{ steps.app-token.outputs.token || secrets.DAWNFIX_PR_TOKEN || github.token }}
+          ISSUE_TOKEN: ${{ github.token }}
+          SCAN_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          SCAN_PAT: ${{ secrets.DAWNFIX_PR_TOKEN }}
+          SCAN_GH: ${{ github.token }}
+          SCAN_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
+          INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          plan="$CAPTURE/plan.tsv"
+          failed=$(cat "$CAPTURE/failed" 2>/dev/null || echo 0)
+          if [ ! -s "$plan" ]; then echo "nothing to publish"; exit "$failed"; fi
+          cd "$PUB_DIR"
+          g() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"; }
+          base_sha=$(g rev-parse HEAD)
+          # The push names its URL, so no remote setting (url, pushurl, receivepack) is used.
+          # Repo-local settings that could still rewrite that URL, add a header or a helper, or
+          # pull in more config are refused. (--local lists an include.path itself, without
+          # following it.)
+          risky=$(g config --local --name-only --list |
+            grep -iE '^(include\.|includeif\.|url\.|credential|http\.|protocol\.|core\.(sshcommand|askpass|gitproxy)$)' || true)
+          if [ -n "$risky" ]; then
+            echo "::error::the publish checkout's git config has settings that could redirect a push ($(printf '%s' "$risky" | tr '\n' ' ')); nothing pushed"
+            exit 1
+          fi
+
+          # Tell the hosted service a PR is open (POST /v1/prs). Warns, never fails the job.
+          post_pr() { # fingerprint pr_url state
+            [ -n "$DAWNFIX_LICENSE" ] || return 0
+            case "$DAWNFIX_LICENSE" in *[!A-Za-z0-9_-]*) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; return 0 ;; esac
+            local base="${INGEST_BASE%/}" code
+            case "$base" in https://*) ;; *) echo "::warning::the ingest URL must be https; PR state not sent"; return 0 ;; esac
+            code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+              curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 15 --retry 2 \
+                -K - -X POST "$base/v1/prs" \
+                -H "Content-Type: application/json" -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
+                --data-binary "$(jq -cn --arg f "$1" --arg u "$2" --arg s "$3" '{fingerprint: $f, pr_url: $u, state: $s}')" \
+                -o /dev/null -w '%{http_code}') || code="${code:-000}"
+            case "$code" in
+              200) echo "service: PR state $3 recorded" ;;
+              401|402|403) echo "::warning::Hosted PR tracking needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."; echo "service: HTTP $code, the Enterprise key was not accepted" ;;
+              404) echo "::warning::service does not know this repo or finding yet (HTTP 404); the ingest of this run may have failed" ;;
+              *) echo "::warning::PR state POST failed (HTTP $code)" ;;
+            esac
+          }
+
+          labels_ready=false
+          ensure_labels() {
+            if [ "$labels_ready" = true ]; then return 0; fi
+            GH_TOKEN="$ISSUE_TOKEN" gh label create dawnfix --color 5319E7 --description "Opened by Dawnfix" > /dev/null 2>&1 || true
+            GH_TOKEN="$ISSUE_TOKEN" gh label create AI-generated --color BFD4F2 --description "AI-generated change (EU AI Act Art. 50)" > /dev/null 2>&1 || true
+            labels_ready=true
+          }
+
+          publish_issue() { # fingerprint title body
+            if [ "$ISSUES" != "github" ]; then
+              echo "report.issues is $ISSUES; GitHub issue for $1 skipped (adapter not in this version)"
+              return 0
+            fi
+            ensure_labels
+            local existing
+            existing=$(GH_TOKEN="$ISSUE_TOKEN" gh issue list --state open --label dawnfix --search "$1 in:title" \
+              --json number --jq '.[0].number // empty')
+            if [ -n "$existing" ]; then
+              GH_TOKEN="$ISSUE_TOKEN" gh issue comment "$existing" --body-file "$3"
+            else
+              GH_TOKEN="$ISSUE_TOKEN" gh issue create --title "dawnfix: $2 ($1)" --label dawnfix --label AI-generated --body-file "$3"
+            fi
+          }
+
+          opened=""  # "<fingerprint> <url>" lines
+          while IFS=$'\t' read -r fp action branch title body sha; do
+            case "$action" in
+              issue) publish_issue "$fp" "$title" "$body"; continue ;;
+              also-issue)
+                url=$(printf '%s\n' "$opened" | sed -n "s/^$fp //p")
+                if [ -n "$url" ]; then
+                  printf '\nDraft PR: %s\n' "$url" >> "$body"
+                  publish_issue "$fp" "$title" "$body"
+                fi
+                continue ;;
+              pr) ;;
+              *) echo "::error::unknown plan entry '$action'"; failed=1; continue ;;
+            esac
+            prior=$(GH_TOKEN="$ISSUE_TOKEN" gh pr list --state all --head "$branch" --json number,state --jq '.[0] | select(.) | "\(.number) \(.state)"')
+            if [ -n "$prior" ]; then
+              if [ "${prior#* }" = "OPEN" ]; then
+                GH_TOKEN="$ISSUE_TOKEN" gh pr comment "${prior%% *}" --body-file "$body"
+                echo "$fp: PR #${prior%% *} is already open; commented the new analysis there"
+              else
+                printf '\n## Why no PR\n%s\n' "a PR for this fingerprint was closed before (#${prior%% *}); not recreated" >> "$body"
+                echo "$fp: a PR for this fingerprint was closed before (#${prior%% *}); reporting as an issue"
+                publish_issue "$fp" "$title" "$body"
+              fi
+              continue
+            fi
+            # None of this run's secret values in any file the branch changes (whole files).
+            leak=false
+            while IFS= read -r f; do
+              content=$(g cat-file -p "$branch:$f" 2>/dev/null || true)
+              for v in "$SCAN_ANTHROPIC" "$SCAN_PAT" "$SCAN_GH" "$SCAN_LICENSE"; do
+                if [ -n "$v" ] && printf '%s' "$content" | grep -qF -- "$v"; then leak=true; fi
+              done
+            done < <(g diff --name-only "$base_sha" "$branch")
+            if [ "$leak" = true ]; then
+              echo "::error::$fp: the diff contains something that looks like a credential; nothing pushed"
+              failed=1
+              continue
+            fi
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || [ "$(g rev-parse --verify -q "refs/heads/$branch")" != "$sha" ]; then
+              echo "::error::$fp: $branch is not the commit the Commit step made; nothing pushed"
+              failed=1
+              continue
+            fi
+            # credential.helper= empties the helper list; include.path=/dev/null (an empty
+            # value is refused by git: "relative config includes must come from files") adds
+            # nothing; the repo's own includes were refused above.
+            if ! GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -c credential.helper= -c include.path=/dev/null -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+                push -q --no-verify "https://x-access-token:${PR_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/heads/$branch:refs/heads/$branch"; then
               echo "::warning::$fp: push to $branch failed (branch exists?); nothing opened"
-              git checkout -q --detach "$base_sha"
               continue
             fi
             ensure_labels
             url=$(GH_TOKEN="$PR_TOKEN" gh pr create --draft --base "$BASE" --head "$branch" \
               --label dawnfix --label AI-generated --title "dawnfix: $title" --body-file "$body")
-            prs=$((prs + 1))
+            opened="$opened"$'\n'"$fp $url"
             echo "$fp: opened $url"
             post_pr "$fp" "$url" open
-            if [ "$(jq -r '.also_issue // false' <<< "$entry")" = "true" ]; then
-              printf '\nDraft PR: %s\n' "$url" >> "$body"
-              publish_issue "$fp" "$title" "$body"
-            fi
-            git checkout -q --detach "$base_sha"
-          done
-
-          unclaimed=$(printf '%s\n' "$changed" | grep -vxF -f <(printf '%s\n' "$claimed" | sed '/^$/d') || true)
-          if [ -n "$changed" ] && [ -n "$unclaimed" ] && [ "$prs" -gt 0 ]; then
-            echo "::notice::changed files not claimed by any published PR were dropped: $(printf '%s' "$unclaimed" | tr '\n' ' ')"
-          fi
+          done < "$plan"
           exit "$failed"
 
   # autonomy: diagnose. Issues only: the agent reads the code and writes its report, nothing
@@ -787,25 +1064,26 @@ jobs:
           name: dawnfix-findings
           path: ${{ env.RUN_DIR }}
 
-      # The agent's instructions: prompts/ci/diagnose.md at the pinned ref (see the fix job).
+      # The agent's instructions: prompts/ci/diagnose.md at the release ref (see the fix job).
       - name: Load the agent's instructions (prompts/ci/diagnose.md)
         id: instructions
         env:
           PROMPT_NAME: diagnose
         run: |
           file="$RUNNER_TEMP/dawnfix-instructions.md"
-          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${CORE_REF}/prompts/ci/${PROMPT_NAME}.md"
+          ref="${CORE_REF:-v$DAWNFIX_VERSION}"
+          url="https://raw.githubusercontent.com/dawnfix/dawnfix/${ref}/prompts/ci/${PROMPT_NAME}.md"
           code=$(curl --silent --show-error --proto '=https' --connect-timeout 5 --max-time 30 \
             --retry 2 -o "$file" -w '%{http_code}' "$url") || code="${code:-000}"
           case "$code" in
             200) ;;
-            404) echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/$PROMPT_NAME.md at '$CORE_REF': that ref does not exist (yet) or is older than v0.2.0. Set DAWNFIX_CORE_REF to v0.2.0 or later: https://github.com/dawnfix/dawnfix/tags"; exit 1 ;;
+            404) echo "::error::github.com/dawnfix/dawnfix has no prompts/ci/$PROMPT_NAME.md at '$ref': that ref does not exist (yet) or is older than v0.2.0. Use a release from https://github.com/dawnfix/dawnfix/tags"; exit 1 ;;
             *) echo "::error::could not load $url (HTTP $code); the agent does not run without its instructions"; exit 1 ;;
           esac
           if ! head -1 "$file" | grep -qxF "<!-- dawnfix:ci-prompt $PROMPT_NAME -->"; then
             echo "::error::$url is not the Dawnfix $PROMPT_NAME prompt"; exit 1
           fi
-          echo "instructions: prompts/ci/$PROMPT_NAME.md at $CORE_REF, sha256 $(sha256sum "$file" | cut -d' ' -f1)"
+          echo "instructions: prompts/ci/$PROMPT_NAME.md at $ref, sha256 $(sha256sum "$file" | cut -d' ' -f1)"
           delim="DAWNFIX_PROMPT_$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
           { echo "text<<$delim"; cat "$file"; echo; echo "$delim"; } >> "$GITHUB_OUTPUT"
 
@@ -831,7 +1109,9 @@ jobs:
                 "deny": [
                   "Bash", "WebFetch", "WebSearch", "NotebookEdit",
                   "Read(./.git/**)", "Read(~/.gitconfig)", "Read(~/.config/gh/**)",
-                  "Edit(./.git/**)", "Edit(./.github/**)", "Edit(./.dawnfix.yml)",
+                  "Edit(./.git/**)", "Write(./.git/**)", "Edit(~/**)", "Write(~/**)",
+                  "Edit(//tmp/**)", "Write(//tmp/**)", "Edit(//home/**)", "Write(//home/**)",
+                  "Edit(./.github/**)", "Edit(./.dawnfix.yml)",
                   "Edit(./.claude/**)", "Edit(./.mcp.json)"
                 ]
               }
@@ -874,8 +1154,11 @@ jobs:
             echo "::error::result.json is not a dawnfix.result/1 document; nothing filed"
             exit 1
           fi
-          if [ -n "$(git status --porcelain --untracked-files=all)" ]; then
-            echo "::notice::the agent changed files in the checkout; they are ignored (the diagnose job never changes code)"
+          # No git here: this step holds a token, and the agent's .git is not to be trusted.
+          # Its report is read as data, regular files only, never through a symlink.
+          if [ -L "$result" ] || [ -L "$findings" ]; then
+            echo "::error::result.json or findings.json is a symlink; nothing filed"
+            exit 1
           fi
           if [ "$ISSUES" != "github" ]; then
             echo "report.issues is $ISSUES; the diagnose job files GitHub issues only, nothing filed"
@@ -916,6 +1199,7 @@ jobs:
             title=$(jq -r '.title // "dawnfix finding"' <<< "$entry" | tr -cd '[:print:]' | cut -c1-100)
             [ -n "$title" ] || title="dawnfix finding"
             body="$RUN_DIR/out/$fp.md"
+            if [ -L "$body" ]; then echo "::warning::$fp: the issue body is a symlink; skipped"; continue; fi
             [ -f "$body" ] || echo "(no body written)" > "$body"
             grep -q "dawnfix:fingerprint=$fp" "$body" || printf '\n<!-- dawnfix:fingerprint=%s -->\n' "$fp" >> "$body"
             printf '\n\n---\nDiagnosed by Dawnfix. AI-generated: verify before acting. Run: %s\n' "$RUN_URL" >> "$body"
@@ -948,7 +1232,7 @@ jobs:
       - name: Send PR state to the hosted service
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
           HEAD_REF: ${{ github.head_ref }}
           PR_URL: ${{ github.event.pull_request.html_url }}
           MERGED: ${{ github.event.pull_request.merged }}
@@ -966,12 +1250,12 @@ jobs:
             exit 0
           fi
           case "$DAWNFIX_LICENSE" in
-            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
           case "$base" in
             https://*) ;;
-            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL; nothing sent"; exit 0 ;;
+            *) echo "::warning::the ingest URL must be an https base URL; nothing sent"; exit 0 ;;
           esac
           state=closed
           if [ "$MERGED" = "true" ]; then state=merged; fi

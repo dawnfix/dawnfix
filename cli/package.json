@@ -1,0 +1,44 @@
+{
+  "name": "dawnfix",
+  "version": "0.3.0",
+  "description": "Dawnfix, the AI SRE that runs in your own GitHub Actions: `npx dawnfix init` sets it up in a repo, `npx dawnfix doctor` checks the setup, `npx dawnfix flare` audits Cloudflare. One file, no dependencies.",
+  "keywords": [
+    "ai-sre",
+    "sre",
+    "github-actions",
+    "aws",
+    "gcp",
+    "cloudflare"
+  ],
+  "homepage": "https://dawnfix.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dawnfix/dawnfix.git",
+    "directory": "cli"
+  },
+  "license": "FSL-1.1-ALv2",
+  "author": "Dawnfix",
+  "type": "module",
+  "bin": {
+    "dawnfix": "dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "files": [
+    "dist/cli.js",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "build:check": "node build.mjs --check",
+    "test": "node --test test/",
+    "prepack": "node build.mjs --check && cp ../LICENSE LICENSE",
+    "postpack": "rm -f LICENSE"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "yaml": "2.9.1"
+  }
+}

@@ -12,9 +12,12 @@
 # daily run re-runs every successful production deploy of the last 5 days and the same
 # comment fills in, provisional until every after-day has settled, then final.
 #
+# The copy-it-yourself form. The short way is the reusable workflow
+# dawnfix/dawnfix/.github/workflows/receipt.yml@v0, which runs exactly this job; below the
+# marker line this file is kept equal to it.
+#
 # Setup (receipt/README.md, or prompts/receipt.md for a coding agent): copy this file to
-# .github/workflows/dawnfix-receipt.yml and replace this placeholder (none may survive):
-#   DAWNFIX_CORE_REF   tag or commit SHA of the public repo (dawnfix/dawnfix) to install dawnfix-core from
+# .github/workflows/dawnfix-receipt.yml. It installs dawnfix==DAWNFIX_VERSION from PyPI.
 #
 # Repository settings it relies on (Settings > Secrets and variables > Actions):
 #   environment dawnfix-receipt    the job runs in it, so the AWS role can trust exactly
@@ -22,14 +25,17 @@
 #                                    (receipt/iam/github-oidc-trust-policy.json)
 #   vars.RECEIPT_ROLE_ARN            role with receipt/iam/receipt-ce-read-policy.json only:
 #                                    ce:GetCostAndUsage, nothing else
-#   vars.DAWNFIX_RECEIPT_SPEC      optional: what to pip install for the receipt CLI instead
-#                                    of receipt/ from the public repo at DAWNFIX_CORE_REF
+#   vars.DAWNFIX_RECEIPT_SPEC        optional: what to pip install for the receipt CLI instead
+#                                    of dawnfix==DAWNFIX_VERSION from PyPI
 #   vars.RECEIPT_ENVIRONMENT         deployment environment that counts; default production
 #   vars.RECEIPT_WINDOW              days compared on each side; default 3d
 #   vars.RECEIPT_TAG_KEY             optional cost allocation tag key for a breakdown in the
 #                                    comment (tag values stay in GitHub)
-#   vars.DAWNFIX_INGEST_URL        base URL of the hosted service; default https://dawnfix.dev
-#   secrets.DAWNFIX_LICENSE        optional Dawnfix Enterprise key, sent only as the bearer
+#   vars.DAWNFIX_INGEST_URL          base URL of the hosted service; default https://dawnfix.dev
+#   vars.DAWNFIX_CORE_REF            fallback: a tag or commit SHA of dawnfix/dawnfix to install
+#                                    from git instead of PyPI (optional)
+#   secrets.DAWNFIX_ENTERPRISE_KEY   optional Dawnfix Enterprise key (the older name
+#                                    DAWNFIX_LICENSE also works), sent only as the bearer
 #                                    token to the hosted service. Without it the receipt runs
 #                                    the same and nothing is sent anywhere
 #
@@ -62,12 +68,19 @@ on:
         description: ISO 8601 deploy time, e.g. 2026-10-20T14:03:00Z
         required: true
 
+# ---- shared body: the same in .github/workflows/receipt.yml and templates/github/workflows/dawnfix-receipt.yml ----
 # One receipt run at a time per repo; a deploy during the daily run waits for it.
 concurrency:
   group: dawnfix-receipt-${{ github.repository }}
   cancel-in-progress: false
 
 permissions: {}
+
+# This release of github.com/dawnfix/dawnfix: the job installs dawnfix==DAWNFIX_VERSION (core
+# and receipt) from PyPI. CORE_REF is the fallback: a tag or commit SHA to install from git.
+env:
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:
   # Only successful deploys to the production environment; every other deployment
@@ -86,7 +99,6 @@ jobs:
       deployments: read # the daily run lists recent production deploys
       id-token: write # GitHub OIDC -> the ce:GetCostAndUsage role
     env:
-      CORE_REF: DAWNFIX_CORE_REF
       RECEIPT_SPEC: ${{ vars.DAWNFIX_RECEIPT_SPEC }}
       RECEIPT_ENVIRONMENT: ${{ vars.RECEIPT_ENVIRONMENT || 'production' }}
       WINDOW: ${{ vars.RECEIPT_WINDOW || '3d' }}
@@ -110,13 +122,20 @@ jobs:
           key: dawnfix-receipt-ce-${{ github.run_id }}
           restore-keys: dawnfix-receipt-ce-
 
+      # From PyPI by default (dawnfix==DAWNFIX_VERSION: core and the tools, one package); from
+      # git at core-ref when that is set; or exactly receipt-spec when that is set.
       - name: Install the receipt CLI
         run: |
-          # The CLI is in the public repo (receipt/),
-          # at the same pinned ref as core.
-          base="git+https://github.com/dawnfix/dawnfix@${CORE_REF}"
-          python -m pip install --disable-pip-version-check --quiet \
-            "dawnfix-core @ ${base}#subdirectory=core" "${RECEIPT_SPEC:-dawnfix-receipt @ ${base}#subdirectory=receipt}"
+          if [ -n "$RECEIPT_SPEC" ]; then
+            python -m pip install --disable-pip-version-check --quiet "$RECEIPT_SPEC"
+          elif [ -z "$CORE_REF" ]; then
+            python -m pip install --disable-pip-version-check --quiet "dawnfix==${DAWNFIX_VERSION}"
+          else
+            case "$CORE_REF" in *[!A-Za-z0-9._/-]*) echo "::error::core-ref must be a tag or commit SHA of github.com/dawnfix/dawnfix, not '$CORE_REF'"; exit 1 ;; esac
+            base="git+https://github.com/dawnfix/dawnfix@${CORE_REF}"
+            python -m pip install --disable-pip-version-check --quiet \
+              "dawnfix-core @ ${base}#subdirectory=core" "dawnfix-receipt @ ${base}#subdirectory=receipt"
+          fi
           receipt --version
 
       # Which deploys this run reports: the one that just succeeded, the one asked for, or
@@ -127,14 +146,14 @@ jobs:
           EVENT: ${{ github.event_name }}
           DEPLOY_SHA: ${{ github.event.deployment.sha }}
           DEPLOYED_AT: ${{ github.event.deployment_status.created_at }}
-          INPUT_SHA: ${{ inputs.sha }}
-          INPUT_AT: ${{ inputs.deployed-at }}
+          INPUT_SHA: ${{ inputs.sha || github.event.inputs.sha }}
+          INPUT_AT: ${{ inputs.deployed-at || github.event.inputs.deployed-at }}
           GH_TOKEN: ${{ github.token }}
         run: |
           list="$OUT/deploys.tsv"
           : > "$list"
           case "$RECEIPT_ENVIRONMENT" in
-            *[!A-Za-z0-9._-]*|"") echo "::error::vars.RECEIPT_ENVIRONMENT must be a plain environment name"; exit 1 ;;
+            *[!A-Za-z0-9._-]*|"") echo "::error::the receipt environment must be a plain environment name"; exit 1 ;;
           esac
           case "$EVENT" in
             deployment_status) printf '%s\t%s\n' "$DEPLOY_SHA" "$DEPLOYED_AT" >> "$list" ;;
@@ -212,7 +231,7 @@ jobs:
         if: steps.receipts.outputs.ran != '' && steps.receipts.outputs.ran != '0'
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted Receipt history (status page and digest) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
@@ -223,12 +242,12 @@ jobs:
             exit 0
           fi
           case "$DAWNFIX_LICENSE" in
-            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
           case "$base" in
             https://*) ;;
-            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL (the workflow appends /v1/receipt); nothing sent"; exit 0 ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/receipt); nothing sent"; exit 0 ;;
           esac
           if ! jq -e '.schema == "dawnfix.receipt/1" and (.deploys | length) > 0' "$doc" >/dev/null 2>&1; then
             echo "::warning::$doc is not a dawnfix.receipt/1 document with deploys; nothing sent"
@@ -250,7 +269,7 @@ jobs:
             201) echo "receipt: HTTP 201, deploys recorded for the status page and the digest" ;;
             200) echo "receipt: HTTP 200, this run was already recorded" ;;
             402) say_need_key "::warning::"; echo "receipt: HTTP 402, this key does not cover hosted reporting for this repo" ;;
-            401) say_need_key "::warning::"; echo "receipt: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_LICENSE secret" ;;
+            401) say_need_key "::warning::"; echo "receipt: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
             403) say_need_key "::warning::"; echo "receipt: HTTP 403, the Enterprise key or its subscription was revoked" ;;
             400|413|415)
               path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")

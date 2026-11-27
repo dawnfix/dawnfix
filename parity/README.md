@@ -30,6 +30,11 @@ service. Brand, org and URLs live in [`src/dawnfix_parity/brand.py`](src/dawnfix
 (plus the non-Python copies listed in `tests/test_brand.py`). Depends on `dawnfix-core`
 (`../core`) for the read-only AWS client guard.
 
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `parity --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
+
 ## Install and run
 
 ```sh
@@ -138,7 +143,8 @@ Read-only, and free to run:
 
 - **The composite action** below (or `parity check` in any CI). Fails the job on drift and
   writes the Markdown job summary. Nothing leaves the runner.
-- **The Dawnfix Parity workflow**, also free: copy
+- **The Dawnfix Parity workflow**, also free: call the reusable
+  `dawnfix/dawnfix/.github/workflows/parity.yml@v0` (the caller is in its header), or copy
   `templates/github/workflows/dawnfix-parity.yml` (steps in its header, or give
   `prompts/parity-ci.md` to your coding agent): weekly (Mondays, before the
   digest) and on pushes to main touching `.parity.yml`, task definitions or IaC; one OIDC role
@@ -147,7 +153,7 @@ Read-only, and free to run:
   and per inventory flag, pass/drift, and a hashed environment-pair id
   ([`schema/parity-ingest.schema.json`](schema/parity-ingest.schema.json), closed objects, no
   strings beyond enums). Without a key nothing is sent anywhere.
-- **Dawnfix Enterprise** (hosted, optional): with the `DAWNFIX_LICENSE` secret the workflow
+- **Dawnfix Enterprise** (hosted, optional): with the `DAWNFIX_ENTERPRISE_KEY` secret the workflow
   also POSTs that document to `/v1/parity`. The hosted service turns it into a status-page
   trend and a Monday "unread / never-rotated / orphaned secrets" section in the digest, with
   a link back to the Actions run where the names are. Monthly subscription, priced per

@@ -8,12 +8,12 @@ workflow that keeps one comment on each production deploy's commit up to date.
 Create a skill named receipt that shows what a deploy did to my AWS bill with Dawnfix Receipt,
 and can add its GitHub Actions workflow to this repo.
 
-Install once (Python 3.11+), with REF a release tag or commit SHA of github.com/dawnfix/dawnfix
-that I give you:
+Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-receipt"
-  "$HOME/.cache/dawnfix-receipt/bin/pip" install \
-    "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core" \
-    "dawnfix-receipt @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=receipt"
+  "$HOME/.cache/dawnfix-receipt/bin/pip" install dawnfix
+(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
+"dawnfix-receipt @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=receipt", REF a release tag.)
+REF below is the release: v followed by what `receipt --version` prints.
 R = "$HOME/.cache/dawnfix-receipt/bin/receipt". Paths below are in that repo at REF.
 
 Hard rules:
@@ -38,17 +38,19 @@ A. Locally:
    shell. It edits its one comment in place on re-runs.
 
 B. In CI (on my yes, through a PR, never on the default branch):
-1. Copy templates/github/workflows/dawnfix-receipt.yml to .github/workflows/dawnfix-receipt.yml
-   and read its header. Replace DAWNFIX_CORE_REF with REF; grep for it after: nothing may survive.
+1. Write .github/workflows/dawnfix-receipt.yml: the caller shown at the top of
+   .github/workflows/receipt.yml (it calls dawnfix/dawnfix/.github/workflows/receipt.yml@v0;
+   pin @REF to freeze it), with `permissions: { contents: write, deployments: read,
+   id-token: write }`. (To keep the whole job in the repo instead: copy
+   templates/github/workflows/dawnfix-receipt.yml and set the variables its header lists.)
    It runs on each successful deployment_status to production and daily for the last 5 days.
 2. Role: receipt/iam/receipt-ce-read-policy.json as permissions and
    receipt/iam/github-oidc-trust-policy.json (ACCOUNT_ID and OWNER/REPO filled in) as trust; it
    trusts only the GitHub environment dawnfix-receipt. Show the aws iam create-role and
    put-role-policy commands; I run them with an admin profile. Create the environment
    dawnfix-receipt in the repo (gh api -X PUT repos/<repo>/environments/dawnfix-receipt) on my yes.
-3. Variables, shown first, set on one yes with gh variable set: RECEIPT_ROLE_ARN, and optionally
-   RECEIPT_ENVIRONMENT (default production), RECEIPT_WINDOW (default 3d), RECEIPT_TAG_KEY.
-   Leave DAWNFIX_INGEST_URL unset. No key is needed. Optional: the Enterprise key DAWNFIX_LICENSE,
+3. Inputs under `with:`: role-arn (not secret), and optionally environment (default
+   production), window (default 3d), tag-key. No key is needed. Optional: the Enterprise key DAWNFIX_ENTERPRISE_KEY,
    which I set myself with gh secret set; only then does a counts-only summary go to dawnfix.dev.
 4. Warn: on a public repo the comment and job summary are public; use it on private repos.
 5. On my yes: branch dawnfix/receipt-setup, commit the workflow, push, open a PR.

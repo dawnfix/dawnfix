@@ -9,6 +9,11 @@ exactly those calls.
 
 Free. Source available under FSL-1.1-ALv2 (see [LICENSE](../LICENSE) at the repo root).
 
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `sweeper --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
+
 Use it from your coding agent: `prompts/sweeper.md` at the repo root is a copy-paste prompt
 that runs the CLI below and summarises the plan. Sample plan: https://dawnfix.dev/sweeper/sample.
 

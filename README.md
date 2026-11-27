@@ -9,38 +9,86 @@ draft PR for you to review. It never merges or deploys. Your logs never leave yo
 
 Free and source available. No key and no plan is needed for anything in this repo.
 
-## Set up
+## Quick start
 
-1. **Read-only cloud role.** AWS: deploy `infra/aws/dawnfix-read-role.yaml` with
-   CloudFormation (it trusts GitHub OIDC for your repo's default branch only), then check it
-   with `infra/aws/verify_readonly.py` (see `infra/aws/README.md`). It must not be able to
-   write. GCP: `infra/gcp/setup-wif.sh` (Workload Identity Federation,
-   `roles/logging.viewer` only).
-2. **Config.** Copy `templates/dawnfix.yml` to `.dawnfix.yml` at your repo root and edit it:
-   the log sources, `autonomy` and `test.command`. Start with `autonomy: diagnose`.
-   Check it with the CLI (Python 3.11+):
+In the repo whose production Dawnfix should watch (Node 20+, and `gh` signed in):
 
-   ```sh
-   python3 -m venv .venv-dawnfix
-   .venv-dawnfix/bin/pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@v0.2.0#subdirectory=core"
-   .venv-dawnfix/bin/dawnfix validate --config .dawnfix.yml
-   ```
-3. **Workflow.** Copy `templates/github/workflows/dawnfix.yml` to
-   `.github/workflows/dawnfix.yml`. Replace `DAWNFIX_CORE_REF` with `v0.2.0` (or a later
-   release tag) or a commit SHA of this repo: the workflow installs `dawnfix-core` from it and
-   loads the agent's instructions from `prompts/ci/` at the same ref (a commit SHA pins exactly
-   what your agent is told). v0.1.0 has no `prompts/ci/`; the workflow stops with a message
-   that says so. Copy the `schedule` cron from `.dawnfix.yml`, and replace the "Install project
-   dependencies" step with your install command.
-4. **Settings.** Repository variable `DAWNFIX_AWS_ROLE_ARN` (or `DAWNFIX_GCP_WIF_PROVIDER`)
-   and the secret `ANTHROPIC_API_KEY`, typed by you: `gh secret set ANTHROPIC_API_KEY`.
-5. **Review and run.** Open a PR with these files and merge it. Then
+```sh
+npx dawnfix init
+```
+
+It asks where your logs are (AWS or GCP) and how far the agent may go (`autonomy`, start
+with `diagnose`), shows the two files it will write, and writes them when you say yes:
+
+- `.dawnfix.yml`: the log sources, `autonomy`, `test.command` (every key:
+  [templates/dawnfix.yml](templates/dawnfix.yml));
+- `.github/workflows/dawnfix.yml`: about 15 lines that call the reusable workflow, with your
+  schedule and permissions:
+
+```yaml
+name: dawnfix
+on:
+  schedule: [{ cron: "17 * * * *" }] # the `schedule` of .dawnfix.yml
+  workflow_dispatch: { inputs: { baseline: { type: boolean }, dry_run: { type: boolean } } }
+permissions: { contents: write, pull-requests: write, issues: write, id-token: write }
+jobs:
+  dawnfix:
+    uses: dawnfix/dawnfix/.github/workflows/dawnfix.yml@v0
+    with:
+      aws-role-arn: ${{ vars.DAWNFIX_AWS_ROLE_ARN }}
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }} # optional
+```
+
+It never asks for a secret and never writes one. It prints what you run next:
+
+1. **Read-only cloud role.** AWS: `infra/aws/dawnfix-read-role.yaml` with CloudFormation
+   (it trusts GitHub OIDC for your repo's default branch only; check it with
+   `infra/aws/verify_readonly.py`). GCP: `infra/gcp/setup-wif.sh` (Workload Identity
+   Federation, `roles/logging.viewer` only).
+2. **Secrets**, typed by you: `gh secret set ANTHROPIC_API_KEY`.
+3. **Review and run.** Open a PR with the two files and merge it. Then
    `gh workflow run dawnfix.yml -f dry_run=true` shows exactly what would leave your account,
    and `gh workflow run dawnfix.yml -f baseline=true` records the errors you already have, so
    only new ones are reported.
-6. **Later**, switch `autonomy` to `plan` or `draft-pr` through a PR. For draft PRs that
-   trigger your CI, set a GitHub App (`DAWNFIX_PR_APP_ID`, `DAWNFIX_PR_APP_PRIVATE_KEY`) or a
-   fine-grained token (`DAWNFIX_PR_TOKEN`) as the PR author.
+4. `npx dawnfix doctor` checks the config, the pinned workflow, the secret and variable
+   names, and says whether you run Free or Enterprise.
+
+Later, switch `autonomy` to `plan` or `draft-pr` through a PR (and give `install-command`).
+For draft PRs that trigger your CI, set a GitHub App (`pr-app-id`,
+`DAWNFIX_PR_APP_PRIVATE_KEY`) or a fine-grained token (`DAWNFIX_PR_TOKEN`) as the PR author.
+
+### The workflows
+
+| Reusable workflow (`uses: dawnfix/dawnfix/.github/workflows/<file>@v0`) | Copy-it-yourself template |
+|---|---|
+| [dawnfix.yml](.github/workflows/dawnfix.yml): the read job and the diagnose or fix agent | [templates/github/workflows/dawnfix.yml](templates/github/workflows/dawnfix.yml) |
+| [parity.yml](.github/workflows/parity.yml): config drift between two AWS environments | [dawnfix-parity.yml](templates/github/workflows/dawnfix-parity.yml) |
+| [flare.yml](.github/workflows/flare.yml): the daily Cloudflare audit | [dawnfix-flare.yml](templates/github/workflows/dawnfix-flare.yml) |
+| [receipt.yml](.github/workflows/receipt.yml): a cost comment on every production deploy | [dawnfix-receipt.yml](templates/github/workflows/dawnfix-receipt.yml) |
+
+Each reusable workflow's header shows its caller and lists its inputs and secrets. The
+permissions in your caller are a ceiling: every job asks for less (only the read job gets
+`id-token`, only the publish job can push, on a fresh runner after the agent's job has
+ended, and it only opens draft PRs). `@v0` follows the
+latest 0.x release; pin `@v0.3.0` or a commit SHA to freeze it. Each release installs the
+same version of the PyPI package `dawnfix` and loads the agent's instructions from
+`prompts/ci/` at its own tag. Fallback, without PyPI: the `core-ref` input (a tag or commit
+SHA of this repo) installs from git at that ref and loads the instructions from it.
+
+The templates are the same jobs and steps, reading repository variables
+(`DAWNFIX_AWS_ROLE_ARN`, `DAWNFIX_INSTALL_COMMAND`, ...) instead of inputs, for those who
+would rather keep the whole file in their repo. Copy one, copy the `schedule` of
+`.dawnfix.yml` into its cron, and set the variables its header lists.
+
+### The CLIs
+
+```sh
+pipx install dawnfix          # PyPI: dawnfix (the tick), logbill, parity, sweeper, leastpriv, receipt, fleet
+dawnfix validate --config .dawnfix.yml
+npx dawnfix flare --help      # npm: the Cloudflare audit (also node flare/dist/cli.js)
+```
 
 ## What it costs you
 
@@ -78,7 +126,8 @@ command. [prompts/ci/](prompts/ci/) holds the instructions the workflow gives it
 | Folder | |
 |---|---|
 | [core/](core/README.md) | `dawnfix-core`: the deterministic tick (query, fingerprint, dedupe, redact), the findings and ingest schemas |
-| [templates/](templates/) | `.dawnfix.yml` and the workflows: `dawnfix.yml`, and the optional `dawnfix-parity.yml`, `dawnfix-flare.yml`, `dawnfix-receipt.yml` |
+| [.github/workflows/](.github/workflows/) | the reusable workflows `dawnfix.yml`, `parity.yml`, `flare.yml`, `receipt.yml`, and `release.yml` |
+| [templates/](templates/) | `.dawnfix.yml` and the copy-it-yourself workflows: `dawnfix.yml`, and the optional `dawnfix-parity.yml`, `dawnfix-flare.yml`, `dawnfix-receipt.yml` |
 | [infra/](infra/aws/README.md) | the read-only AWS role (CloudFormation), its verifier, the GCP Workload Identity script |
 | [prompts/](prompts/README.md) | copy-paste prompts for coding agents, and the CI agent's instructions |
 | [logbill/](logbill/README.md) | Dawnfix Logbill: read-only CloudWatch Logs bill X-ray that runs on your machine |
@@ -90,10 +139,15 @@ command. [prompts/ci/](prompts/ci/) holds the instructions the workflow gives it
 | [fleet/](fleet/README.md) | Dawnfix Fleet: a read-only collector for agencies that look after many client accounts |
 | [hosted/](hosted/README.md) | a helper for Dawnfix Enterprise, the hosted part (below) |
 
+Also [cli/](cli/README.md), the npm package `dawnfix` (`init`, `doctor`, `flare`), and
+`pyproject.toml`, the PyPI package `dawnfix` (core and the Python tools in one). How a
+release is published: [RELEASING.md](RELEASING.md).
+
 Tests: `cd core && make install && make test`; `core/.venv/bin/pytest -q infra/tests`;
 `cd <logbill|parity|sweeper|leastpriv|receipt> && make install test`;
 `cd fleet/collector && make install && make test`;
-`cd flare && npm ci && npm test && npm run build:check`.
+`cd flare && npm ci && npm test && npm run build:check`;
+`cd cli && npm ci && npm test && npm run build:check`.
 
 ## Enterprise (hosted, optional)
 
@@ -101,7 +155,8 @@ Everything above runs in your own accounts with no key. Dawnfix Enterprise is ou
 part: a status page, digest and alert emails, the Fleet board, and support.
 Dawnfix Enterprise is sold by contact: [dawnfix@sivakoza.ai](mailto:dawnfix@sivakoza.ai). It is a monthly
 subscription, priced per organization (https://dawnfix.dev/pricing). With an Enterprise key
-in the `DAWNFIX_LICENSE` secret, the workflows also send counts (never log text, names or
+in the `DAWNFIX_ENTERPRISE_KEY` secret (passed to the reusable workflow; the templates also
+read the older name `DAWNFIX_LICENSE`), the workflows also send counts (never log text, names or
 values) to the hosted service. Field by field: `core/schema/ingest.schema.json` and
 https://dawnfix.dev/security. Without the key, each of those steps prints one line, such as
 "Hosted reporting (status page and digest) needs an Enterprise key.", sends nothing, and the

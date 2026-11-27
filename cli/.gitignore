@@ -1,0 +1,4 @@
+node_modules/
+# Copied from the repo root by `npm pack` / `npm publish` (prepack), removed after (postpack).
+LICENSE
+*.tgz

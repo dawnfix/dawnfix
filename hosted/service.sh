@@ -8,10 +8,10 @@
 #   service.sh fleet-client --name "Client Co" [--emails a@x.com] [--weekly on] [--auto-send off]
 #                                                        POST /v1/clients, then PATCH /v1/fleet/client
 #
-# The key is read from $DAWNFIX_LICENSE, or asked for without echo when stdin is a
+# The key is read from $DAWNFIX_ENTERPRISE_KEY (or the older $DAWNFIX_LICENSE), or asked for without echo when stdin is a
 # terminal. Run it in your own terminal, not through a coding agent, so the key never
 # passes through one. Output is the service's JSON answer, which holds no key: a new
-# client's key goes straight into that repo's DAWNFIX_LICENSE secret through
+# client's key goes straight into that repo's DAWNFIX_ENTERPRISE_KEY secret through
 # `gh secret set` and is never printed. The service URL is $DAWNFIX_URL, default
 # https://dawnfix.dev.
 set -eu
@@ -36,7 +36,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-key="${DAWNFIX_LICENSE:-}"
+key="${DAWNFIX_ENTERPRISE_KEY:-${DAWNFIX_LICENSE:-}}"
 if [ -z "$key" ] && [ -t 0 ]; then
   printf 'Dawnfix Enterprise key (not shown): ' >&2
   stty -echo 2>/dev/null || true
@@ -47,7 +47,7 @@ fi
 # No key, or a key the service refuses (401, 402, 403): the one line, and exit 0. Everything
 # outside this helper (the workflows, every CLI) works the same without a key.
 need_key="The hosted service needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
-[ -n "$key" ] || { echo "$need_key"; echo "service: set DAWNFIX_LICENSE, or run this in a terminal to type it" >&2; exit 0; }
+[ -n "$key" ] || { echo "$need_key"; echo "service: set DAWNFIX_ENTERPRISE_KEY, or run this in a terminal to type it" >&2; exit 0; }
 case "$key" in *[!A-Za-z0-9_-]*) echo "$need_key"; echo "service: that does not look like a key" >&2; exit 0 ;; esac
 
 # {"emails": [...], "display_name"?: "..."} from a comma list; the service re-validates.
@@ -110,9 +110,9 @@ case "$cmd" in
     code=$(call POST /v1/clients "$(body_json)")
     if [ "$code" != 201 ]; then cat "$out"; echo; explain "$code"; refused "$code"; fi
     python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["license_key"], end="")' "$out" |
-      gh secret set DAWNFIX_LICENSE --repo "$repo"
+      gh secret set DAWNFIX_ENTERPRISE_KEY --repo "$repo"
     python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d.pop("license_key", None); print(json.dumps(d, indent=2))' "$out"
-    echo "service: the client's key is stored as DAWNFIX_LICENSE in $repo (not shown)" >&2
+    echo "service: the client's key is stored as DAWNFIX_ENTERPRISE_KEY in $repo (not shown)" >&2
     ;;
   fleet-client)
     # A client for the Fleet board. The agency's runner posts for it with the agency key, so

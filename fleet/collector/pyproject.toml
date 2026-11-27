@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix-fleet"
-version = "0.1.0"
+version = "0.3.0"
 description = "Read-only, per-client account summary for agencies: alarms, spend, certificates, credential health. Free; the hosted Fleet board is Dawnfix Enterprise."
 requires-python = ">=3.11"
 license = "FSL-1.1-ALv2"

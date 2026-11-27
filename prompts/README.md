@@ -13,11 +13,11 @@ chat, nothing changed without your yes.
    to save it as a reusable skill, command or rule (for example "save this as a skill
    named dawnfix-logbill"), so you can call it again later.
 
-Each prompt installs the tool from the public repo, github.com/dawnfix/dawnfix, at a ref
-you choose: a release tag or a commit SHA (v0.2.0 or later for the workflows, which load
-`prompts/ci/`). Pin one so you know which code runs. Nothing here needs a licence key. The
-optional Enterprise key (`DAWNFIX_LICENSE`) only turns on hosted reporting at
-https://dawnfix.dev (see https://dawnfix.dev/pricing).
+Each prompt installs the Python tools from PyPI (`pip install dawnfix`, one package for
+every CLI) or runs `npx dawnfix`; the workflows are the reusable ones in
+github.com/dawnfix/dawnfix (`.github/workflows/`), called at `@v0` or a pinned release.
+Nothing here needs a licence key. The optional Enterprise key (`DAWNFIX_ENTERPRISE_KEY`)
+only turns on hosted reporting at https://dawnfix.dev (see https://dawnfix.dev/pricing).
 
 `prompts/ci/` holds the instructions the GitHub Actions workflow gives its own agent. You
 do not paste those; the workflow fetches them.

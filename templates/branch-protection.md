@@ -30,7 +30,7 @@ the `read` job only. The `fix` job must not use that environment.
 
 ## `dawnfix/*` branches
 
-- Leave them unprotected so the fix job can push; they are disposable.
+- Leave them unprotected so the publish job can push; they are disposable.
 - Optional ruleset: restrict creation of `dawnfix/*` to the Dawnfix PR author, so other
   branches cannot impersonate a Dawnfix PR.
 

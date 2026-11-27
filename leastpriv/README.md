@@ -4,6 +4,11 @@ Turn "this role has unused permissions" into a pull request a reviewer can appro
 (Formerly IAMtrim.) Free. Source available under FSL-1.1-ALv2 (see [LICENSE](../LICENSE) at
 the repo root).
 
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `leastpriv --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
+
 Use it from your coding agent: `prompts/leastpriv.md` at the repo root is a copy-paste prompt
 that runs the CLI below and opens a draft PR with the patch only on your explicit yes.
 Sample PR: https://dawnfix.dev/leastpriv.

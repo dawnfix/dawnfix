@@ -7,12 +7,12 @@ in a safe order. It never deletes anything. Nothing is uploaded.
 ````text
 Create a skill named sweeper that finds AWS leftovers after a migration with Dawnfix Sweeper.
 
-Install once (Python 3.11+), with REF a release tag or commit SHA of github.com/dawnfix/dawnfix
-that I give you:
+Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-sweeper"
-  "$HOME/.cache/dawnfix-sweeper/bin/pip" install \
-    "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core" \
-    "dawnfix-sweeper @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=sweeper"
+  "$HOME/.cache/dawnfix-sweeper/bin/pip" install dawnfix
+(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
+"dawnfix-sweeper @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=sweeper", REF a release tag.)
+REF below is the release: v followed by what `sweeper --version` prints.
 SW = "$HOME/.cache/dawnfix-sweeper/bin/sweeper" (call it by this path; the name is common).
 
 Paths like iam/... below are in github.com/dawnfix/dawnfix at REF; show a file if I ask.

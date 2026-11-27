@@ -8,9 +8,13 @@
 # Daily, before the 06:30 UTC digest: the read-only audit of the Cloudflare account(s) the
 # token sees, plus the wrangler files in this repo, with the bundled CLI and plain node.
 #
+# The copy-it-yourself form. The short way is the reusable workflow
+# dawnfix/dawnfix/.github/workflows/flare.yml@v0, which runs exactly this job; below the
+# marker line this file is kept equal to it.
+#
 # Setup (flare/README.md, or prompts/flare-ci.md for a coding agent): copy this file to
-# .github/workflows/dawnfix-flare.yml and replace this placeholder (none may survive):
-#   DAWNFIX_FLARE_REF   tag or commit SHA of the public repo (dawnfix/dawnfix) whose flare/dist/cli.js runs here
+# .github/workflows/dawnfix-flare.yml. It runs flare/dist/cli.js of dawnfix/dawnfix at the tag
+# v<DAWNFIX_VERSION>.
 #
 # Repository settings it relies on (Settings > Secrets and variables > Actions):
 #   secrets.FLARE_CLOUDFLARE_API_TOKEN   read-only Cloudflare API token (flare/README.md,
@@ -21,8 +25,11 @@
 #   vars.FLARE_FAIL_ON                   optional: fail the run when a finding is at or above
 #                                        this severity (critical|high|medium|low|info);
 #                                        default never (the email is the alert)
-#   vars.DAWNFIX_INGEST_URL            base URL of the hosted service; default https://dawnfix.dev
-#   secrets.DAWNFIX_LICENSE            optional Dawnfix Enterprise key, sent only as the bearer
+#   vars.DAWNFIX_INGEST_URL              base URL of the hosted service; default https://dawnfix.dev
+#   vars.DAWNFIX_CORE_REF                fallback: a tag or commit SHA of dawnfix/dawnfix to run
+#                                        flare/dist/cli.js from (optional)
+#   secrets.DAWNFIX_ENTERPRISE_KEY       optional Dawnfix Enterprise key (the older name
+#                                        DAWNFIX_LICENSE also works), sent only as the bearer
 #                                        token to the hosted service. Without it the audit runs
 #                                        the same and nothing is sent anywhere
 #
@@ -46,12 +53,19 @@ on:
     - cron: "17 5 * * *" # daily 05:17 UTC: before the 06:30 digest, off the hour
   workflow_dispatch:
 
+# ---- shared body: the same in .github/workflows/flare.yml and templates/github/workflows/dawnfix-flare.yml ----
 # One audit at a time per repo.
 concurrency:
   group: dawnfix-flare-${{ github.repository }}
   cancel-in-progress: false
 
 permissions: {}
+
+# This release of github.com/dawnfix/dawnfix: the job runs flare/dist/cli.js from the tag
+# v<DAWNFIX_VERSION>. CORE_REF is the fallback: another tag or commit SHA to run it from.
+env:
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:
   audit:
@@ -61,19 +75,18 @@ jobs:
     permissions:
       contents: read # checkout: flare.config.json and the repo's wrangler files
     env:
-      FLARE_REF: DAWNFIX_FLARE_REF
       FAIL_ON: ${{ vars.FLARE_FAIL_ON || 'never' }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           persist-credentials: false
 
-      # The CLI, one bundled file, from the public repo at a pinned ref. A dot directory:
+      # The CLI, one bundled file, from the public repo at this release. A dot directory:
       # the repo scan below skips it.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: dawnfix/dawnfix
-          ref: ${{ env.FLARE_REF }}
+          ref: ${{ env.CORE_REF || format('v{0}', env.DAWNFIX_VERSION) }}
           path: .dawnfix-flare
           persist-credentials: false
           sparse-checkout: flare/dist/cli.js
@@ -119,7 +132,7 @@ jobs:
             exit 0
           fi
           if [ ! -f "$FLARE_CLI" ]; then
-            echo "::error::flare/dist/cli.js not found at ref $FLARE_REF"
+            echo "::error::flare/dist/cli.js not found at ref ${CORE_REF:-v$DAWNFIX_VERSION}"
             echo "exit_code=2" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -158,7 +171,7 @@ jobs:
         if: steps.audit.outputs.exit_code == '0' || steps.audit.outputs.exit_code == '1'
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted Flare history (status page and new-exposure email) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
@@ -169,12 +182,12 @@ jobs:
             exit 0
           fi
           case "$DAWNFIX_LICENSE" in
-            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
           case "$base" in
             https://*) ;;
-            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL (the workflow appends /v1/flare); nothing sent"; exit 0 ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/flare); nothing sent"; exit 0 ;;
           esac
           if ! jq -e '.schema == "dawnfix.flare/1"' "$doc" >/dev/null 2>&1; then
             echo "::warning::$doc is not a dawnfix.flare/1 document; nothing sent"
@@ -203,7 +216,7 @@ jobs:
             402)
               limit=$(jq -r '.limit // "?"' "$resp" 2>/dev/null || echo "?")
               say_need_key "::warning::"; echo "flare: HTTP 402 ($limit), this key does not cover hosted reporting for this repo or account" ;;
-            401) say_need_key "::warning::"; echo "flare: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_LICENSE secret" ;;
+            401) say_need_key "::warning::"; echo "flare: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
             403) say_need_key "::warning::"; echo "flare: HTTP 403, the Enterprise key or its subscription was revoked" ;;
             400|413|415)
               path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")

@@ -32,17 +32,18 @@ Hard rules:
    Permissions: parity/iam/parity-read-only-policy.json. Show both documents and the
    aws iam create-role / put-role-policy commands; I run them with an admin profile. One account
    for both environments: one role. Then ask me for the role ARNs (not secret).
-4. Copy templates/github/workflows/dawnfix-parity.yml to .github/workflows/dawnfix-parity.yml
-   and read its header. Replace DAWNFIX_PARITY_REF with REF. Adjust push: paths: to where this
-   repo keeps task definitions and IaC (task-definition*.json, *.tf, serverless.yml,
-   template.yaml, cdk.json); keep .parity.yml and the workflow itself in the list.
-   grep -n DAWNFIX_PARITY_REF .github/workflows/dawnfix-parity.yml must print nothing.
-5. Variables, shown first, set on one yes with gh variable set NAME --repo <repo> --body <v>:
-   PARITY_LEFT and PARITY_RIGHT (only if not dev / prod), PARITY_LEFT_ROLE_ARN,
-   PARITY_RIGHT_ROLE_ARN (skip for one account), PARITY_AWS_REGION, PARITY_FAIL_ON if chosen.
-   Leave DAWNFIX_INGEST_URL unset. No key is needed to run it.
+4. Write .github/workflows/dawnfix-parity.yml: the caller shown at the top of
+   .github/workflows/parity.yml (it calls dawnfix/dawnfix/.github/workflows/parity.yml@v0;
+   pin @REF to freeze it). Inputs under `with:`: left-role-arn, right-role-arn (skip for one
+   account), and only if needed left / right (default dev / prod), aws-region, fail-on. Set
+   push: paths: to where this repo keeps task definitions and IaC (task-definition*.json,
+   *.tf, serverless.yml, template.yaml, cdk.json); keep .parity.yml and the workflow itself.
+   Keep `permissions: { contents: read, id-token: write }`. (To keep the whole job in the
+   repo instead: copy templates/github/workflows/dawnfix-parity.yml and set the PARITY_*
+   variables its header lists.)
+5. Role ARNs are not secret: they go in the workflow. No key is needed to run it.
 6. Explain: values are never read in CI; names appear only in the run's job summary in GitHub.
-   Only with the optional Enterprise key DAWNFIX_LICENSE (I set it myself; it may already exist
+   Only with the optional Enterprise key DAWNFIX_ENTERPRISE_KEY (I set it myself; it may already exist
    for the main Dawnfix workflow) does the job send counts per finding kind and inventory flag
    plus a hashed environment-pair id (parity/schema/parity-ingest.schema.json) to dawnfix.dev,
    printed in the log first.

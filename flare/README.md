@@ -13,6 +13,9 @@ Dawnfix Enterprise, our hosted service. The product name, org
 and URLs it prints are kept in one file:
 [`src/core/brand.ts`](src/core/brand.ts).
 
+From npm, with nothing to clone: `npx dawnfix flare --help` (the npm package `dawnfix`
+bundles this CLI; `npx dawnfix flare ...` takes every option below).
+
 `dist/cli.js` is the whole tool in one file (esbuild bundle of `src/`, no runtime
 dependencies), checked in so it runs with plain `node` 20 or newer, no install:
 
@@ -133,14 +136,15 @@ per account: about 8 + 5 per script + 5 per zone.
 
 ## Daily audit in CI (free)
 
-`templates/github/workflows/dawnfix-flare.yml` in the Dawnfix repo (setup steps in its
-header, or give `prompts/flare-ci.md` to your coding agent) runs `node flare/dist/cli.js`
-from the public repo at a pinned ref every day at 05:17 UTC in the customer's GitHub Actions, with their read-only
+The reusable workflow `dawnfix/dawnfix/.github/workflows/flare.yml@v0` (the caller is in its
+header; the copy-it-yourself form is `templates/github/workflows/dawnfix-flare.yml`; or give
+`prompts/flare-ci.md` to your coding agent) runs `node flare/dist/cli.js` from the public
+repo at its release tag every day at 05:17 UTC in the customer's GitHub Actions, with their read-only
 token as the GitHub secret `FLARE_CLOUDFLARE_API_TOKEN` (`_2` .. `_5` for more accounts):
 `--summary "$GITHUB_STEP_SUMMARY"` (names stay in GitHub), `--state` in the Actions cache
 instead of `~/.flare/state.json`, and `--ingest-out` for the counts document. No key is
 needed, and without one nothing leaves the runner. With
-the optional Dawnfix Enterprise key (`DAWNFIX_LICENSE`) the workflow also POSTs that counts
+the optional Dawnfix Enterprise key (`DAWNFIX_ENTERPRISE_KEY`) the workflow also POSTs that counts
 document to `/v1/flare`, and a rising critical/high/medium count against the previous run
 emails the workspace the same day. The hosted service never sees a Cloudflare token.
 

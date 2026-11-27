@@ -7,12 +7,18 @@ deploy (by service and usage type, and by a cost allocation tag if you name one)
 
 > deploy abc1234: +$40.07/day (+305%), mostly NAT Gateway data processing (+$35.10/day)
 
-It runs in the customer's own GitHub Actions: `templates/github/workflows/dawnfix-receipt.yml`
-fires on every successful `deployment_status` to the production environment
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `receipt --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
+
+It runs in the customer's own GitHub Actions: the reusable `.github/workflows/receipt.yml`
+(called as `dawnfix/dawnfix/.github/workflows/receipt.yml@v0`; copy-it-yourself form
+`templates/github/workflows/dawnfix-receipt.yml`) fires on every successful `deployment_status` to the production environment
 and re-runs the last 5 days' deploys daily, so the comment goes from "waiting for data" to
 provisional to final. The comment stays in GitHub. Setup steps are in the workflow's header;
 or use it from your coding agent with the copy-paste prompt `prompts/receipt.md`. Only with
-the optional Dawnfix Enterprise key (`DAWNFIX_LICENSE`) does the hosted service get a
+the optional Dawnfix Enterprise key (`DAWNFIX_ENTERPRISE_KEY`) does the hosted service get a
 counts-only summary for the status page's "Deploy cost" section and the digest (below).
 Sample comment: https://dawnfix.dev/receipt.
 

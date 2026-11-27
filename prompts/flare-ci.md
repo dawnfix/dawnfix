@@ -34,15 +34,17 @@ Hard rules:
    date about a year out. Name it dawnfix-flare-readonly.
 3. I run: gh secret set FLARE_CLOUDFLARE_API_TOKEN --repo <repo>. Further accounts:
    FLARE_CLOUDFLARE_API_TOKEN_2 to _5. Check with gh secret list (names only).
-4. Copy templates/github/workflows/dawnfix-flare.yml to .github/workflows/dawnfix-flare.yml and
-   read its header. Replace DAWNFIX_FLARE_REF with REF.
-   grep -n DAWNFIX_FLARE_REF .github/workflows/dawnfix-flare.yml must print nothing.
+4. Write .github/workflows/dawnfix-flare.yml: the caller shown at the top of
+   .github/workflows/flare.yml (it calls dawnfix/dawnfix/.github/workflows/flare.yml@v0; pin
+   @REF to freeze it), passing FLARE_CLOUDFLARE_API_TOKEN (and _2 to _5 if set) under
+   `secrets:`, with `permissions: { contents: read }`. (To keep the whole job in the repo
+   instead: copy templates/github/workflows/dawnfix-flare.yml.)
    Offer flare.config.json at the repo root from flare/flare.config.example.json for hostnames
    public on purpose (publicHostnames) and scripts that sign users in themselves
    (appAuthScripts); never a token in it; leave tokenEnv, repos and failOn out.
-   Optional, on my yes: gh variable set FLARE_FAIL_ON --repo <repo> --body high to fail the run
-   while a high finding is open (default never). Leave DAWNFIX_INGEST_URL unset.
-5. Explain: no key is needed to run it. Only with the optional Enterprise key DAWNFIX_LICENSE
+   Optional, on my yes: `fail-on: high` under `with:` to fail the run while a high finding is
+   open (default never). Leave DAWNFIX_INGEST_URL unset.
+5. Explain: no key is needed to run it. Only with the optional Enterprise key DAWNFIX_ENTERPRISE_KEY
    (I set it myself) does the job send counts per check and severity, the number of accounts and
    a hashed id per account (flare/schema/flare-ingest.schema.json) to dawnfix.dev, printed in the
    log first. The secret-name baseline (names, never values) stays in the repo's Actions cache.

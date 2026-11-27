@@ -47,6 +47,11 @@ agency repo, GitHub Actions (hourly, one job per client)
 A client can instead run the same collector in its own Actions with its own client key,
 OIDC straight into its read role, no hub and no External ID.
 
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `fleet --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
+
 ## Collector (`collector/`)
 
 ```sh

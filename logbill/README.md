@@ -21,7 +21,12 @@ name, org and URL; renaming is a change to that one file (plus these docs).
 - Explained on the hosted page `/logbill` of the Dawnfix site, which renders
   `iam/logbill-readonly-policy.json`, `prices.json` and `sample/sample.json` at
   build time and serves `sample/report.html` at `/logbill/sample`.
-- Not on PyPI (owner decision, 28 Oct 2026).
+- On PyPI, in the package `dawnfix` (every Dawnfix CLI, one version), since v0.3.0.
+
+Install from PyPI: `pipx install dawnfix` (or `pip install dawnfix` in a venv). One package
+holds every Dawnfix CLI (`dawnfix`, `logbill`, `parity`, `sweeper`, `leastpriv`, `receipt`,
+`fleet`); `logbill --version` prints the release. For development in this folder:
+`make install test` (an editable install of this tool and `../core`).
 
 ## Install and run
 

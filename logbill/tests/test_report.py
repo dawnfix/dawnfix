@@ -19,7 +19,8 @@ def test_html_renders_the_numbers(factory, prices):
     assert "$60.18" in html  # monthly total
     assert "Biggest savings" in html and "put-retention-policy" in html
     assert brand.PITCH_LINE in html
-    assert 'name="viewport"' in html and "prefers-color-scheme:dark" in html
+    assert 'name="viewport"' in html and "prefers-color-scheme:light" in html
+    assert '<article class="doc">' in html and "--doc-accent:#1a5e33" in html  # the shared document style
 
 
 def test_html_has_no_external_assets_or_urls(factory, prices):

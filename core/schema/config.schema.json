@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dawnfix.dev/schema/config.schema.json",
+  "title": ".dawnfix.yml",
+  "description": "What Dawnfix watches and what it may do. dawnfix_core.config is the authority; this schema says the same in JSON Schema for editors and `npx dawnfix doctor`, and core/tests/test_config_schema.py keeps the two in step. Checks a schema cannot express (duplicate sources, a regex that does not compile) are left to `dawnfix validate`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "sources"],
+  "properties": {
+    "version": { "const": 1, "description": "Only version 1 is supported" },
+    "autonomy": { "enum": ["diagnose", "plan", "draft-pr"], "default": "diagnose" },
+    "schedule": {
+      "type": "string",
+      "pattern": "^\\s*\\S+(\\s+\\S+){4}\\s*$",
+      "description": "A 5-field cron expression; copy it into the workflow's cron as well",
+      "default": "17 * * * *"
+    },
+    "sources": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 1,
+        "additionalProperties": false,
+        "properties": {
+          "aws": { "$ref": "#/$defs/aws" },
+          "gcp": { "$ref": "#/$defs/gcp" }
+        }
+      }
+    },
+    "rules": { "type": "array", "items": { "$ref": "#/$defs/rule" } },
+    "limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fix_prs_per_day": { "$ref": "#/$defs/whole" },
+        "max_turns": { "$ref": "#/$defs/whole" },
+        "timeout_minutes": { "$ref": "#/$defs/whole" },
+        "max_events_per_source": { "$ref": "#/$defs/whole" },
+        "max_findings": { "type": "integer", "exclusiveMinimum": 0, "maximum": 150 },
+        "spike_factor": { "type": "number", "exclusiveMinimum": 0 },
+        "spike_min_count": { "$ref": "#/$defs/whole" }
+      }
+    },
+    "phi_mode": { "type": "boolean" },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "issues": { "enum": ["github", "linear", "jira", "none"] },
+        "digest": { "type": "array", "items": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" } }
+      }
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string",
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9_./:=@+-]+( [A-Za-z0-9_./:=@+-]+)*$",
+          "description": "The one command the fix agent may run: plain words, no quotes or shell operators"
+        }
+      }
+    },
+    "extends": { "not": {}, "description": "Not implemented yet" }
+  },
+  "$defs": {
+    "whole": { "type": "integer", "exclusiveMinimum": 0 },
+    "aws": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["region"],
+      "properties": {
+        "region": { "type": "string", "pattern": "^[a-z]{2}(-[a-z]+)+-[0-9]$" },
+        "role": { "type": "string", "pattern": "^arn:aws[a-z-]*:iam::[0-9]{1,12}:role/[A-Za-z0-9_+=,.@/-]+$" },
+        "log_groups": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "type": "string", "minLength": 1, "pattern": "\\S" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1, "pattern": "\\S" },
+                  "filter_pattern": { "type": "string" },
+                  "stream_prefix": { "type": "string" }
+                }
+              }
+            ]
+          }
+        },
+        "alarms": { "type": "boolean" },
+        "alb": { "type": "string", "pattern": "^app/[A-Za-z0-9_-]+/[A-Za-z0-9_*-]+$" }
+      },
+      "anyOf": [
+        { "required": ["log_groups"], "properties": { "log_groups": { "minItems": 1 } } },
+        { "required": ["alarms"], "properties": { "alarms": { "const": true } } },
+        { "required": ["alb"] }
+      ]
+    },
+    "gcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project"],
+      "properties": {
+        "project": { "type": "string", "pattern": "^[a-z][a-z0-9-]{4,28}[a-z0-9]$" },
+        "filter": { "type": "string", "minLength": 1, "pattern": "\\S" }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "conditions", "actions"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 64, "pattern": "\\S" },
+        "conditions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^\\s*(source|source_id|kind|service|route|method|status|error|error_class|alarm|count|severity|fingerprint)\\s*(==|!=|~=|\\^=|\\$=|>=|<=|>|<)\\s*\\S"
+          }
+        },
+        "actions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "anyOf": [
+              { "const": "ignore" },
+              {
+                "type": "object", "additionalProperties": false, "required": ["severity"],
+                "properties": { "severity": { "enum": ["critical", "high", "medium", "low"] } }
+              },
+              {
+                "type": "object", "additionalProperties": false, "required": ["notify"],
+                "properties": {
+                  "notify": {
+                    "anyOf": [
+                      { "enum": ["email", "issue", "none"] },
+                      { "type": "array", "items": { "enum": ["email", "issue", "none"] } }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -19,7 +19,7 @@ Config: `.dawnfix.yml`. Read `autonomy`, `phi_mode`, `report.issues`, `test.comm
 - Your tools are exactly `Read Glob Grep Edit Write` and the test command given below, with
   arguments. No git, no gh, no network. Do not try other commands; they are denied.
 - You never commit, push, branch or open anything. Leave the test and the fix as edits in the
-  working tree and describe them in `result.json` (step 9). The workflow's Publish step
+  working tree and describe them in `result.json` (step 9). The workflow's publish job
   commits the test files, then the fix files, pushes `dawnfix/<fp>` and opens the draft PR or
   the issue. It looks up existing PRs and issues for a fingerprint; you do not.
 
@@ -198,7 +198,7 @@ ones you decided to leave), in the order of the work list:
 | `also_issue` | `true` for Critical, or when `notify` contains `issue`: an issue is opened as well, linking the PR |
 
 Every changed file must be in exactly one entry's `test_files` or `fix_files`; anything else
-is dropped. The Publish step turns a `pr` into an issue (and appends "Why no PR") when
+is dropped. The publish job turns a `pr` into an issue (and appends "Why no PR") when
 autonomy is not `draft-pr`, the budget is spent, there is no test command, a list is empty, a
 path was not changed, is protected or is claimed twice, or a PR for the fingerprint was
 closed before. It never runs your test; your Verification section is the record that it

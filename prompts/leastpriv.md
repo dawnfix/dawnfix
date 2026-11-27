@@ -7,12 +7,12 @@ remove the permissions the role has not used. It never changes IAM. Nothing is u
 ````text
 Create a skill named leastpriv that trims one IAM role to least privilege with Dawnfix Leastpriv.
 
-Install once (Python 3.11+), with REF a release tag or commit SHA of github.com/dawnfix/dawnfix
-that I give you:
+Install once (Python 3.11+), from PyPI (the package dawnfix holds every Dawnfix CLI):
   python3 -m venv "$HOME/.cache/dawnfix-leastpriv"
-  "$HOME/.cache/dawnfix-leastpriv/bin/pip" install \
-    "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core" \
-    "dawnfix-leastpriv @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=leastpriv"
+  "$HOME/.cache/dawnfix-leastpriv/bin/pip" install dawnfix
+(Without PyPI: pip install "dawnfix-core @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=core"
+"dawnfix-leastpriv @ git+https://github.com/dawnfix/dawnfix@REF#subdirectory=leastpriv", REF a release tag.)
+REF below is the release: v followed by what `leastpriv --version` prints.
 LP = "$HOME/.cache/dawnfix-leastpriv/bin/leastpriv".
 
 Paths like iam/... below are in github.com/dawnfix/dawnfix at REF; show a file if I ask.

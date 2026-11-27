@@ -1,0 +1,315 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Part of Dawnfix (https://github.com/dawnfix/dawnfix), source available under the Functional
+# Source License 1.1, ALv2 Future License: see LICENSE at the root of that repo.
+#
+# Dawnfix Receipt, the reusable workflow: a comment on every production deploy with what it
+# did to the AWS bill, and (with an Enterprise key) the "Deploy cost" section of the status
+# page and the digest. The CLI it installs is receipt/.
+#
+# On a successful deployment to the production environment it compares Cost Explorer daily
+# cost for the days before and after, and keeps one comment on the deployed commit up to
+# date. Cost Explorer lags about a day, so the first comment says "waiting for data"; the
+# daily run re-runs every successful production deploy of the last 5 days and the same
+# comment fills in, provisional until every after-day has settled, then final.
+#
+# Call it from .github/workflows/dawnfix-receipt.yml in your repo (prompts/receipt.md):
+#
+#   name: dawnfix-receipt
+#   on:
+#     deployment_status:
+#     schedule: [{ cron: "17 9 * * *" }]
+#     workflow_dispatch: { inputs: { sha: { required: true }, deployed-at: { required: true } } }
+#   permissions: { contents: write, deployments: read, id-token: write }
+#   jobs:
+#     receipt:
+#       uses: dawnfix/dawnfix/.github/workflows/receipt.yml@v0
+#       with:
+#         role-arn: arn:aws:iam::123456789012:role/dawnfix-receipt
+#       secrets:
+#         DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}   # optional
+#
+# The job runs in the environment dawnfix-receipt, so the AWS role can trust exactly
+# repo:OWNER/REPO:environment:dawnfix-receipt (receipt/iam/github-oidc-trust-policy.json).
+# The copy-it-yourself form is templates/github/workflows/dawnfix-receipt.yml: the same job,
+# reading repository variables where this reads inputs.
+#
+# What goes where:
+#   - The comment (services, usage types, $/day before and after, tag values): on the
+#     deployed commit and in this job's summary, in GitHub. On a public repository both
+#     are public: use Receipt on private repositories only.
+#   - The hosted service gets $OUT/receipt-ingest.json (dawnfix.receipt/1,
+#     receipt/schema/receipt-ingest.schema.json): per deploy a hashed id, the day, whether
+#     it is final, the $/day change snapped to a 1-2-5 grid of cents and the AWS product
+#     family that moved most. No commit SHA, no totals, no usage type, no tag. Printed in
+#     the log before it is sent. With an Enterprise key only: POST {ingest-url}/v1/receipt
+#     with the key as bearer token (read from stdin, never argv), X-Dawnfix-Repo and
+#     X-Dawnfix-Run: the status page's "Deploy cost" section and the digest link back here.
+#   - Cost Explorer bills $0.01 per request: one per deploy per run at most, none for a
+#     deploy whose days are not over yet, none when the cached answer has settled.
+
+name: dawnfix-receipt
+
+on:
+  workflow_call:
+    inputs:
+      role-arn:
+        description: Role with receipt/iam/receipt-ce-read-policy.json only (ce:GetCostAndUsage)
+        type: string
+        required: true
+      environment:
+        description: Deployment environment that counts
+        type: string
+        default: production
+      window:
+        description: Days compared on each side
+        type: string
+        default: 3d
+      tag-key:
+        description: Optional cost allocation tag key for a breakdown in the comment (tag values stay in GitHub)
+        type: string
+        default: ""
+      receipt-spec:
+        description: "Optional: what to pip install for the receipt CLI instead of this release"
+        type: string
+        default: ""
+      sha:
+        description: "Deployed commit SHA (a manual run; the caller's workflow_dispatch input of the same name also works)"
+        type: string
+        default: ""
+      deployed-at:
+        description: ISO 8601 deploy time, e.g. 2026-10-20T14:03:00Z (with sha)
+        type: string
+        default: ""
+      ingest-url:
+        description: Base URL of the hosted service (Enterprise key only)
+        type: string
+        default: https://dawnfix.dev
+      core-ref:
+        description: "Fallback: a tag or commit SHA of dawnfix/dawnfix to install from git instead of this release from PyPI"
+        type: string
+        default: ""
+    secrets:
+      DAWNFIX_ENTERPRISE_KEY:
+        description: Optional Dawnfix Enterprise key, sent only as the bearer token to the hosted service
+        required: false
+
+# ---- shared body: the same in .github/workflows/receipt.yml and templates/github/workflows/dawnfix-receipt.yml ----
+# One receipt run at a time per repo; a deploy during the daily run waits for it.
+concurrency:
+  group: dawnfix-receipt-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions: {}
+
+# This release of github.com/dawnfix/dawnfix: the job installs dawnfix==DAWNFIX_VERSION (core
+# and receipt) from PyPI. CORE_REF is the fallback: a tag or commit SHA to install from git.
+env:
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ inputs.core-ref }}
+
+jobs:
+  # Only successful deploys to the production environment; every other deployment
+  # (previews, the receipt job's own dawnfix-receipt environment) is skipped here.
+  receipt:
+    name: deploy cost receipt (read-only)
+    if: >-
+      github.event_name != 'deployment_status' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == (inputs.environment || 'production'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: dawnfix-receipt
+    permissions:
+      contents: write # commit comments (the receipt)
+      deployments: read # the daily run lists recent production deploys
+      id-token: write # GitHub OIDC -> the ce:GetCostAndUsage role
+    env:
+      RECEIPT_SPEC: ${{ inputs.receipt-spec }}
+      RECEIPT_ENVIRONMENT: ${{ inputs.environment || 'production' }}
+      WINDOW: ${{ inputs.window || '3d' }}
+      TAG_KEY: ${{ inputs.tag-key }}
+      CACHE_DIR: .receipt-cache
+    steps:
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Paths
+        run: |
+          mkdir -p "$RUNNER_TEMP/receipt"
+          echo "OUT=$RUNNER_TEMP/receipt" >> "$GITHUB_ENV"
+
+      # Cost Explorer answers, kept across runs: a settled answer is never bought twice.
+      - name: Restore the Cost Explorer cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .receipt-cache
+          key: dawnfix-receipt-ce-${{ github.run_id }}
+          restore-keys: dawnfix-receipt-ce-
+
+      # From PyPI by default (dawnfix==DAWNFIX_VERSION: core and the tools, one package); from
+      # git at core-ref when that is set; or exactly receipt-spec when that is set.
+      - name: Install the receipt CLI
+        run: |
+          if [ -n "$RECEIPT_SPEC" ]; then
+            python -m pip install --disable-pip-version-check --quiet "$RECEIPT_SPEC"
+          elif [ -z "$CORE_REF" ]; then
+            python -m pip install --disable-pip-version-check --quiet "dawnfix==${DAWNFIX_VERSION}"
+          else
+            case "$CORE_REF" in *[!A-Za-z0-9._/-]*) echo "::error::core-ref must be a tag or commit SHA of github.com/dawnfix/dawnfix, not '$CORE_REF'"; exit 1 ;; esac
+            base="git+https://github.com/dawnfix/dawnfix@${CORE_REF}"
+            python -m pip install --disable-pip-version-check --quiet \
+              "dawnfix-core @ ${base}#subdirectory=core" "dawnfix-receipt @ ${base}#subdirectory=receipt"
+          fi
+          receipt --version
+
+      # Which deploys this run reports: the one that just succeeded, the one asked for, or
+      # (daily) every successful production deploy of the last 5 days.
+      - name: Deploys
+        id: deploys
+        env:
+          EVENT: ${{ github.event_name }}
+          DEPLOY_SHA: ${{ github.event.deployment.sha }}
+          DEPLOYED_AT: ${{ github.event.deployment_status.created_at }}
+          INPUT_SHA: ${{ inputs.sha || github.event.inputs.sha }}
+          INPUT_AT: ${{ inputs.deployed-at || github.event.inputs.deployed-at }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          list="$OUT/deploys.tsv"
+          : > "$list"
+          case "$RECEIPT_ENVIRONMENT" in
+            *[!A-Za-z0-9._-]*|"") echo "::error::the receipt environment must be a plain environment name"; exit 1 ;;
+          esac
+          case "$EVENT" in
+            deployment_status) printf '%s\t%s\n' "$DEPLOY_SHA" "$DEPLOYED_AT" >> "$list" ;;
+            workflow_dispatch) printf '%s\t%s\n' "$INPUT_SHA" "$INPUT_AT" >> "$list" ;;
+            schedule)
+              gh api "repos/$GITHUB_REPOSITORY/deployments?environment=$RECEIPT_ENVIRONMENT&per_page=50" \
+                --jq '.[] | select((.created_at | fromdateiso8601) > (now - 432000)) | [.id, .sha] | @tsv' \
+                > "$OUT/recent.tsv"
+              while IFS=$'\t' read -r id sha; do
+                case "$id" in *[!0-9]*|"") continue ;; esac
+                at=$(gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" \
+                  --jq '[.[] | select(.state == "success")][0].created_at // empty')
+                if [ -n "$at" ]; then printf '%s\t%s\n' "$sha" "$at" >> "$list"; fi
+              done < "$OUT/recent.tsv"
+              ;;
+            *) echo "::error::unexpected event $EVENT"; exit 1 ;;
+          esac
+          echo "count=$(wc -l < "$list" | tr -d ' ')" >> "$GITHUB_OUTPUT"
+          echo "deploys to report: $(wc -l < "$list" | tr -d ' ')"
+
+      - name: AWS credentials (OIDC, Cost Explorer read only)
+        if: steps.deploys.outputs.count != '0'
+        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ inputs.role-arn }}
+          aws-region: us-east-1
+          role-session-name: dawnfix-receipt-${{ github.run_id }}
+          role-duration-seconds: 900
+          mask-aws-account-id: true
+
+      # One receipt per deploy: the comment on the commit (in GitHub) and one entry in the
+      # counts-only ingest document. A malformed SHA or time is skipped, never passed on.
+      - name: Receipts
+        id: receipts
+        if: steps.deploys.outputs.count != '0'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          n=0; failed=0; skipped=0
+          while IFS=$'\t' read -r sha at; do
+            if ! printf '%s' "$sha" | grep -Eq '^[0-9a-f]{7,40}$'; then
+              echo "::warning::skipped a deploy whose commit is not a hex SHA"; skipped=$((skipped + 1)); continue
+            fi
+            if ! printf '%s' "$at" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?(Z|[+-][0-9]{2}:?[0-9]{2})$'; then
+              echo "::warning::skipped deploy ${sha:0:7}: its time is not ISO 8601"; skipped=$((skipped + 1)); continue
+            fi
+            args=(--deploy-sha "$sha" --deployed-at "$at" --window "$WINDOW" --cache-dir "$CACHE_DIR"
+                  --ingest-out "$OUT/receipt-ingest.json" --post)
+            if [ -n "$TAG_KEY" ]; then args+=(--tag-key "$TAG_KEY"); fi
+            set +e
+            receipt "${args[@]}" >> "$GITHUB_STEP_SUMMARY"
+            rc=$?
+            set -e
+            n=$((n + 1))
+            if [ "$rc" != 0 ]; then
+              failed=$((failed + 1))
+              echo "::warning::receipt for ${sha:0:7} exited $rc (2 Cost Explorer or GitHub error, 3 read-only guard refused a call)"
+            fi
+          done < "$OUT/deploys.tsv"
+          {
+            echo "ran=$n"
+            echo "failed=$failed"
+            echo "skipped=$skipped"
+          } >> "$GITHUB_OUTPUT"
+          echo "receipts: $n run, $failed failed, $skipped skipped"
+
+      - name: Save the Cost Explorer cache
+        if: always() && steps.receipts.outcome != 'skipped'
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: .receipt-cache
+          key: dawnfix-receipt-ce-${{ github.run_id }}
+
+      - name: Send counts to the hosted service
+        if: steps.receipts.outputs.ran != '' && steps.receipts.outputs.ran != '0'
+        env:
+          INGEST_BASE: ${{ inputs.ingest-url || 'https://dawnfix.dev' }}
+          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
+        run: |
+          # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
+          need_key="Hosted Receipt history (status page and digest) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
+          say_need_key() { printf '%s%s\n' "${1:-}" "$need_key"; printf '%s\n' "$need_key" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"; }
+          doc="$OUT/receipt-ingest.json"
+          if [ -z "$DAWNFIX_LICENSE" ]; then
+            say_need_key
+            exit 0
+          fi
+          case "$DAWNFIX_LICENSE" in
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+          esac
+          base="${INGEST_BASE%/}"
+          case "$base" in
+            https://*) ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/receipt); nothing sent"; exit 0 ;;
+          esac
+          if ! jq -e '.schema == "dawnfix.receipt/1" and (.deploys | length) > 0' "$doc" >/dev/null 2>&1; then
+            echo "::warning::$doc is not a dawnfix.receipt/1 document with deploys; nothing sent"
+            exit 0
+          fi
+          echo "Sending exactly this (counts only: no SHA, no totals, no usage types, no tags):"
+          jq -c . "$doc"
+          resp="$OUT/receipt-response.json"
+          code=$(printf 'header = "Authorization: Bearer %s"\n' "$DAWNFIX_LICENSE" |
+            curl --silent --show-error --proto '=https' \
+              --connect-timeout 5 --max-time 15 --retry 2 --retry-max-time 30 \
+              -K - -X POST "$base/v1/receipt" \
+              -H "Content-Type: application/json" \
+              -H "X-Dawnfix-Repo: $GITHUB_REPOSITORY" \
+              -H "X-Dawnfix-Run: $GITHUB_RUN_ID" \
+              --data-binary "@$doc" \
+              -o "$resp" -w '%{http_code}') || code="${code:-000}"
+          case "$code" in
+            201) echo "receipt: HTTP 201, deploys recorded for the status page and the digest" ;;
+            200) echo "receipt: HTTP 200, this run was already recorded" ;;
+            402) say_need_key "::warning::"; echo "receipt: HTTP 402, this key does not cover hosted reporting for this repo" ;;
+            401) say_need_key "::warning::"; echo "receipt: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
+            403) say_need_key "::warning::"; echo "receipt: HTTP 403, the Enterprise key or its subscription was revoked" ;;
+            400|413|415)
+              path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")
+              echo "::warning::receipt rejected the payload (HTTP $code at $path); these deploys are missing from the status page and digest" ;;
+            429) echo "::warning::receipt rate limited (HTTP 429); these deploys are missing from the status page and digest" ;;
+            *) echo "::warning::receipt POST failed (HTTP $code); the status page and digest will miss these deploys" ;;
+          esac
+
+      - name: Result
+        if: always()
+        env:
+          FAILED: ${{ steps.receipts.outputs.failed }}
+        run: |
+          if [ -n "$FAILED" ] && [ "$FAILED" != 0 ]; then
+            echo "::error::$FAILED receipt(s) failed: see the warnings above"
+            exit 1
+          fi
+          echo "done"

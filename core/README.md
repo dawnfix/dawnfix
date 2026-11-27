@@ -7,10 +7,14 @@ fingerprints, drops what it has seen before, redacts everything and writes
 spends no tokens.
 
 Free. Source available under FSL-1.1-ALv2 (see [LICENSE](../LICENSE) at the repo root).
-It runs in your own GitHub Actions with no key; the main workflow is
-`templates/github/workflows/dawnfix.yml`.
+It runs in your own GitHub Actions with no key; the main workflow is the reusable
+`.github/workflows/dawnfix.yml` (copy-it-yourself form: `templates/github/workflows/dawnfix.yml`).
 
 ## Install
+
+From PyPI: `pipx install dawnfix` (add `[gcp]` for GCP sources: `pipx install 'dawnfix[gcp]'`).
+The package `dawnfix` is this core (command `dawnfix`) and every Python tool, one version.
+The reusable workflow installs the same package at its own release. For development:
 
 ```sh
 cd core

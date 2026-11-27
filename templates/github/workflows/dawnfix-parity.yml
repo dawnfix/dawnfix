@@ -9,10 +9,13 @@
 # Weekly (Mondays, before the 06:30 UTC digest) and on every push to main that touches
 # config, task definitions or IaC: `parity check` between two environments, read-only.
 #
+# The copy-it-yourself form. The short way is the reusable workflow
+# dawnfix/dawnfix/.github/workflows/parity.yml@v0, which runs exactly this job; below the
+# marker line this file is kept equal to it.
+#
 # Setup (parity/README.md, or prompts/parity-ci.md for a coding agent): copy this file to
-# .github/workflows/dawnfix-parity.yml and replace this placeholder (none may survive):
-#   DAWNFIX_PARITY_REF   tag or commit SHA of the public repo (dawnfix/dawnfix) to install dawnfix-core and dawnfix-parity from
-# and adjusts `push: paths:` to where the repo keeps task definitions and IaC.
+# .github/workflows/dawnfix-parity.yml and adjust `push: paths:` to where the repo keeps task
+# definitions and IaC. It installs dawnfix==DAWNFIX_VERSION (core and parity) from PyPI.
 #
 # Repository settings it relies on (Settings > Secrets and variables > Actions):
 #   vars.PARITY_LEFT                 environment name in .parity.yml; default dev
@@ -24,8 +27,11 @@
 #   vars.PARITY_AWS_REGION           region for STS; default us-east-1 (.parity.yml sets each
 #                                    environment's own region)
 #   vars.PARITY_FAIL_ON              optional `--fail-on` list; default parity's
-#   vars.DAWNFIX_INGEST_URL        base URL of the hosted service; default https://dawnfix.dev
-#   secrets.DAWNFIX_LICENSE        optional Dawnfix Enterprise key, sent only as the bearer
+#   vars.DAWNFIX_INGEST_URL          base URL of the hosted service; default https://dawnfix.dev
+#   vars.DAWNFIX_CORE_REF            fallback: a tag or commit SHA of dawnfix/dawnfix to install
+#                                    from git instead of PyPI (optional)
+#   secrets.DAWNFIX_ENTERPRISE_KEY   optional Dawnfix Enterprise key (the older name
+#                                    DAWNFIX_LICENSE also works), sent only as the bearer
 #                                    token to the hosted service. Without it the check runs
 #                                    the same and nothing is sent anywhere
 #
@@ -58,12 +64,19 @@ on:
       - ".github/workflows/dawnfix-parity.yml"
   workflow_dispatch:
 
+# ---- shared body: the same in .github/workflows/parity.yml and templates/github/workflows/dawnfix-parity.yml ----
 # One check at a time per repo; a push during a run waits for it.
 concurrency:
   group: dawnfix-parity-${{ github.repository }}
   cancel-in-progress: false
 
 permissions: {}
+
+# This release of github.com/dawnfix/dawnfix: the job installs dawnfix==DAWNFIX_VERSION (core
+# and parity) from PyPI. CORE_REF is the fallback: a tag or commit SHA to install from git.
+env:
+  DAWNFIX_VERSION: "0.3.0"
+  CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:
   check:
@@ -74,7 +87,6 @@ jobs:
       contents: read # checkout .parity.yml
       id-token: write # GitHub OIDC -> one read-only AWS role per environment
     env:
-      PARITY_REF: DAWNFIX_PARITY_REF
       LEFT: ${{ vars.PARITY_LEFT || 'dev' }}
       RIGHT: ${{ vars.PARITY_RIGHT || 'prod' }}
       FAIL_ON: ${{ vars.PARITY_FAIL_ON }}
@@ -100,12 +112,19 @@ jobs:
             echo "AWS_CONFIG_FILE=$RUNNER_TEMP/parity/config"
           } >> "$GITHUB_ENV"
 
+      # From PyPI by default (dawnfix==DAWNFIX_VERSION: core and the tools, one package); from
+      # git at core-ref when that is set.
       - name: Install dawnfix-parity
         run: |
-          base="git+https://github.com/dawnfix/dawnfix@${PARITY_REF}"
-          python -m pip install --disable-pip-version-check --quiet \
-            "dawnfix-core @ ${base}#subdirectory=core" \
-            "dawnfix-parity @ ${base}#subdirectory=parity"
+          case "$CORE_REF" in
+            "") python -m pip install --disable-pip-version-check --quiet "dawnfix==${DAWNFIX_VERSION}" ;;
+            *[!A-Za-z0-9._/-]*) echo "::error::core-ref must be a tag or commit SHA of github.com/dawnfix/dawnfix, not '$CORE_REF'"; exit 1 ;;
+            *)
+              base="git+https://github.com/dawnfix/dawnfix@${CORE_REF}"
+              python -m pip install --disable-pip-version-check --quiet \
+                "dawnfix-core @ ${base}#subdirectory=core" \
+                "dawnfix-parity @ ${base}#subdirectory=parity" ;;
+          esac
           parity -c .parity.yml validate
 
       - name: AWS credentials, left environment (OIDC, read-only)
@@ -178,7 +197,7 @@ jobs:
         if: steps.check.outputs.exit_code == '0' || steps.check.outputs.exit_code == '1'
         env:
           INGEST_BASE: ${{ vars.DAWNFIX_INGEST_URL || 'https://dawnfix.dev' }}
-          DAWNFIX_LICENSE: ${{ secrets.DAWNFIX_LICENSE }}
+          DAWNFIX_LICENSE: ${{ (secrets.DAWNFIX_ENTERPRISE_KEY || secrets.DAWNFIX_LICENSE) }}
         run: |
           # Missing or refused Enterprise key: one line, in the log and the job summary, and the run goes on.
           need_key="Hosted Parity history (status page and weekly email) needs an Enterprise key. Contact dawnfix@sivakoza.ai to get one."
@@ -189,12 +208,12 @@ jobs:
             exit 0
           fi
           case "$DAWNFIX_LICENSE" in
-            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_LICENSE is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
+            *[!A-Za-z0-9_-]*) say_need_key "::warning::"; echo "DAWNFIX_ENTERPRISE_KEY is not a key (it has characters a key never has); nothing sent"; exit 0 ;;
           esac
           base="${INGEST_BASE%/}"
           case "$base" in
             https://*) ;;
-            *) echo "::warning::DAWNFIX_INGEST_URL must be an https base URL (the workflow appends /v1/parity); nothing sent"; exit 0 ;;
+            *) echo "::warning::the ingest URL must be an https base URL (the workflow appends /v1/parity); nothing sent"; exit 0 ;;
           esac
           if ! jq -e '.schema == "dawnfix.parity/1"' "$doc" >/dev/null 2>&1; then
             echo "::warning::$doc is not a dawnfix.parity/1 document; nothing sent"
@@ -216,7 +235,7 @@ jobs:
             201) echo "parity: HTTP 201, run recorded for the status page and the weekly email" ;;
             200) echo "parity: HTTP 200, this run was already recorded" ;;
             402) say_need_key "::warning::"; echo "parity: HTTP 402, this key does not cover hosted reporting for this repo" ;;
-            401) say_need_key "::warning::"; echo "parity: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_LICENSE secret" ;;
+            401) say_need_key "::warning::"; echo "parity: HTTP 401, the key is not a known Enterprise key; check the DAWNFIX_ENTERPRISE_KEY secret" ;;
             403) say_need_key "::warning::"; echo "parity: HTTP 403, the Enterprise key or its subscription was revoked" ;;
             400|413|415)
               path=$(jq -r '.path // "?"' "$resp" 2>/dev/null || echo "?")

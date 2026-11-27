@@ -25,7 +25,8 @@ describe('HTML report', () => {
     const h = renderHtml(run(await apiSnapshot()).result);
     expect(h).not.toMatch(/<link\b|<script[^>]+src=|<img\b|@import|url\(/i);
     expect(h).not.toMatch(/https?:\/\//);
-    expect(h).toContain('prefers-color-scheme:dark');
+    expect(h).toContain('prefers-color-scheme:light');
+    expect(h).toContain('<article class="doc">'); // the document style, as on the site
     expect(h).toContain('name="viewport"');
     expect(h).toContain('@media (max-width:560px)');
     expect(h.match(/class="f"/g)).toHaveLength(run(await apiSnapshot()).result.findings.length);
