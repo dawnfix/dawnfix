@@ -220,12 +220,22 @@ def test_out_inside_the_checkout_is_refused(setup):
                   config_path=s["work"] / ".dawnfix.yml", env=s["env"], http=s["http"], claude_cmd=[str(s["claude"])])
 
 
+def _not_ours_or_gone(pid: int) -> None:
+    """The agent's leftover is gone. The pid the child wrote may be its number inside the PID
+    namespace; on the host that number can belong to another user's process (EPERM), which is
+    not ours either. The proof that nothing of ours still runs is the stopped writes below."""
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return
+    raise AssertionError(f"pid {pid} still exists and is signalable by us")
+
+
 def test_a_background_process_the_agent_left_is_killed_before_the_capture(setup):
     s = setup
     assert go(s, fake="bg") == 0
     pid = int((s["tmp"] / "marker.pid").read_text())
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)
+    _not_ours_or_gone(pid)
     size = (s["work"] / "src" / "bg.js").stat().st_size
     import time
     time.sleep(0.3)
@@ -299,8 +309,7 @@ def test_a_setsid_child_is_dead_before_the_capture(setup):
     import time
     time.sleep(0.5)
     pid = int((s["tmp"] / "marker.pid").read_text().strip())
-    with pytest.raises(ProcessLookupError):
-        os.kill(pid, 0)  # (inside the namespace it had another number; either way, nothing runs)
+    _not_ours_or_gone(pid)
     size = (s["work"] / "src" / "esc.js").stat().st_size
     time.sleep(0.4)
     assert (s["work"] / "src" / "esc.js").stat().st_size == size
