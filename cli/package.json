@@ -33,7 +33,7 @@
   "scripts": {
     "build": "node build.mjs",
     "build:check": "node build.mjs --check",
-    "test": "node --test test/",
+    "test": "node --test test/*.test.mjs",
     "prepack": "node build.mjs --check && cp ../LICENSE LICENSE",
     "postpack": "rm -f LICENSE"
   },
