@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import CONFIG_SCHEMA from '../../core/schema/config.schema.json';
+import { hasDawnfix, INTEGRITY, SECRETS as GITLAB_SECRETS } from './gitlab.mjs';
 import { detectRepo } from './repo.mjs';
 import { validate } from './schema.mjs';
 import { VERSION } from './version.mjs';
@@ -18,7 +19,8 @@ Checks the Dawnfix setup of the repo you are in:
   - .dawnfix.yml is valid (core's schema)
   - .github/workflows/ calls dawnfix/dawnfix/.github/workflows/dawnfix.yml at a pinned
     release (a tag such as v0 or v${VERSION}, or a commit SHA), or holds the copy-it-yourself
-    template, with the permissions its jobs need and the cron of .dawnfix.yml
+    template, with the permissions its jobs need and the cron of .dawnfix.yml;
+    on GitLab, .gitlab-ci.yml includes the Dawnfix template (pinned, with integrity)
   - the secrets and variables it uses exist (names only, through gh; --no-gh lists them)
   - Free or Enterprise: whether an Enterprise key is set
 Exit 0 when nothing failed, 1 otherwise.
@@ -27,6 +29,9 @@ Exit 0 when nothing failed, 1 otherwise.
 const NEEDED_PERMISSIONS = { contents: 'write', 'pull-requests': 'write', issues: 'write', 'id-token': 'write' };
 const USES = /^dawnfix\/dawnfix\/\.github\/workflows\/dawnfix\.yml(?:@(.*))?$/;
 const ENTERPRISE = ['DAWNFIX_ENTERPRISE_KEY'];
+// Your AI API key (Claude today). The old secret name is read as a fallback for one release.
+const AI_SECRET = 'DAWNFIX_AI_API_KEY';
+const FALLBACK_AI_SECRET = 'ANTHROPIC_API_KEY'; // deprecated fallback for DAWNFIX_AI_API_KEY
 
 function readYaml(path) {
   return parseYaml(readFileSync(path, 'utf8'));
@@ -106,7 +111,7 @@ export async function doctor(argv, io) {
     io.stderr('dawnfix doctor: not inside a git repository\n');
     return 2;
   }
-  io.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.root}\n\n`);
+  io.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.gitlab?.path || repo.root}\n\n`);
 
   // 1. .dawnfix.yml
   const cfgPath = join(repo.root, '.dawnfix.yml');
@@ -130,12 +135,31 @@ export async function doctor(argv, io) {
     }
   }
 
-  // 2. the workflow
+  // 2. the workflow (GitHub), else a GitLab pipeline that includes the template
   const wf = findWorkflow(repo.root);
-  let needs = { secrets: ['ANTHROPIC_API_KEY'], vars: [] };
+  const ciPath = join(repo.root, '.gitlab-ci.yml');
+  const ci = !wf && existsSync(ciPath) ? readFileSync(ciPath, 'utf8') : '';
+  if (ci && hasDawnfix(ci)) {
+    const tag = /dawnfix\/dawnfix\/(v\d+\.\d+\.\d+)\/templates\/gitlab\//.exec(ci)?.[1];
+    const integrity = /integrity:\s*["']?(sha256-[A-Za-z0-9+/=]+)/.exec(ci)?.[1];
+    if (!/templates\/gitlab\/dawnfix\.gitlab-ci\.yml/.test(ci)) ok('.gitlab-ci.yml defines the Dawnfix jobs (a copy of the template)');
+    else if (!tag) bad('.gitlab-ci.yml includes the Dawnfix template but not at a release tag: use the include lines of npx dawnfix init --host gitlab --dry-run');
+    else if (!integrity) warn(`.gitlab-ci.yml includes the Dawnfix template of ${tag} without integrity: (GitLab then runs whatever that URL serves)`);
+    else if (tag === `v${VERSION}` && integrity !== INTEGRITY) bad(`.gitlab-ci.yml: the integrity of the ${tag} template is ${INTEGRITY}, not ${integrity}`);
+    else ok(`.gitlab-ci.yml includes the Dawnfix template of ${tag}, pinned with its integrity`);
+    const sources = (config?.sources || []).map((s) => Object.keys(s)[0]);
+    const vars = [...(sources.includes('aws') ? ['DAWNFIX_AWS_ROLE_ARN', 'DAWNFIX_AWS_REGION'] : []), ...(sources.includes('gcp') ? ['DAWNFIX_GCP_WIF_PROVIDER'] : [])];
+    warn('GitLab: check by hand in Settings > CI/CD > Variables (and a pipeline schedule with DAWNFIX_RUN=true):');
+    for (const [name, env, what] of GITLAB_SECRETS) io.stdout(`        secret ${name} (masked, protected, environment ${env}): ${what}\n`);
+    for (const name of vars) io.stdout(`        variable ${name}\n`);
+    ok('plan: Free & source available, unless DAWNFIX_ENTERPRISE_KEY is set (hosted reporting, Enterprise)');
+    io.stdout(failed ? `\n${failed} check(s) failed.\n` : '\nAll checks passed.\n');
+    return failed ? 1 : 0;
+  }
+  let needs = { secrets: [AI_SECRET], vars: [] };
   let passesKey = false;
   if (!wf) {
-    bad('no Dawnfix workflow in .github/workflows/: run npx dawnfix init');
+    bad(`no Dawnfix workflow in .github/workflows/${ci ? ' and no Dawnfix include in .gitlab-ci.yml' : ''}: run npx dawnfix init`);
   } else {
     const text = readFileSync(join(repo.root, wf.file), 'utf8');
     if (wf.kind === 'caller') {
@@ -148,16 +172,19 @@ export async function doctor(argv, io) {
       if (perms === 'write-all' || missing.length === 0) ok('permissions cover every job (each job narrows them)');
       else bad(`${wf.file} must grant ${missing.join(', ')} (GitHub refuses to start a run whose jobs ask for more than the caller grants)`);
       const wfNeeds = referenced(JSON.stringify(wf.jobDoc.with || {}) + JSON.stringify(wf.jobDoc.secrets || {}));
-      needs = { secrets: [...new Set(['ANTHROPIC_API_KEY', ...wfNeeds.secrets])], vars: wfNeeds.vars };
+      if (wfNeeds.secrets.includes(FALLBACK_AI_SECRET) && !wfNeeds.secrets.includes(AI_SECRET)) {
+        warn(`${wf.file} passes the deprecated ${FALLBACK_AI_SECRET} (fallback for this release only): pass ${AI_SECRET}: \${{ secrets.${AI_SECRET} }} instead`);
+      }
+      needs = { secrets: [...new Set([AI_SECRET, ...wfNeeds.secrets.filter((x) => x !== FALLBACK_AI_SECRET)])], vars: wfNeeds.vars.filter((x) => x !== 'DAWNFIX_AI_MODEL') };
       if (wf.jobDoc.secrets === 'inherit') {
-        warn('secrets: inherit passes every secret of the repo to the workflow; pass ANTHROPIC_API_KEY (and DAWNFIX_ENTERPRISE_KEY) by name');
-        needs.secrets = ['ANTHROPIC_API_KEY'];
+        warn(`secrets: inherit passes every secret of the repo to the workflow; pass ${AI_SECRET} (and DAWNFIX_ENTERPRISE_KEY) by name`);
+        needs.secrets = [AI_SECRET];
       }
       passesKey = wf.jobDoc.secrets === 'inherit' || ENTERPRISE.some((k) => wfNeeds.secrets.includes(k));
     } else {
       ok(`${wf.file} is the copy-it-yourself template of ${wf.ref}`);
       const r = referenced(text);
-      needs = { secrets: ['ANTHROPIC_API_KEY'], vars: r.vars.filter((x) => /ROLE_ARN|WIF_PROVIDER/.test(x)) };
+      needs = { secrets: [AI_SECRET], vars: r.vars.filter((x) => /ROLE_ARN|WIF_PROVIDER/.test(x)) };
       passesKey = true;
     }
     const cron = cronOf(wf.doc);
@@ -184,7 +211,8 @@ export async function doctor(argv, io) {
       secretNames = s.names;
       for (const name of required) {
         if (s.names.includes(name)) ok(`secret ${name} is set`);
-        else bad(`secret ${name} is not set: gh secret set ${name}${name === 'ANTHROPIC_API_KEY' ? '   (an organization secret works too)' : ''}`);
+        else if (name === AI_SECRET && s.names.includes(FALLBACK_AI_SECRET)) warn(`secret ${FALLBACK_AI_SECRET} is set but deprecated (read as a fallback for this release only): gh secret set ${AI_SECRET}   (your AI API key, Claude today)`);
+        else bad(`secret ${name} is not set: gh secret set ${name}${name === AI_SECRET ? '   (your AI API key, Claude today; an organization secret works too)' : ''}`);
       }
       for (const name of needs.vars) {
         if (vars.names.includes(name)) ok(`variable ${name} is set`);

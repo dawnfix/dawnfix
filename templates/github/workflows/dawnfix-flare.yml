@@ -63,7 +63,7 @@ permissions: {}
 # This release of github.com/dawnfix/dawnfix: the job runs flare/dist/cli.js from the tag
 # v<DAWNFIX_VERSION>. CORE_REF is the fallback: another tag or commit SHA to run it from.
 env:
-  DAWNFIX_VERSION: "0.3.1"
+  DAWNFIX_VERSION: "0.4.0"
   CORE_REF: ${{ vars.DAWNFIX_CORE_REF }}
 
 jobs:

@@ -56,8 +56,12 @@ jobs:
           for f in core logbill parity sweeper leastpriv receipt fleet/collector; do
             check "$f/pyproject.toml" "$(sed -n 's/^version = "\(.*\)"$/\1/p' "$f/pyproject.toml")"
           done
+          for f in core/src/dawnfix_core logbill/src/logbill parity/src/dawnfix_parity sweeper/src/dawnfix_sweeper \
+                   leastpriv/src/dawnfix_leastpriv receipt/src/dawnfix_receipt fleet/collector/src/dawnfix_fleet; do
+            check "$f/__init__.py" "$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$f/__init__.py")"
+          done
           for f in .github/workflows/dawnfix.yml .github/workflows/parity.yml .github/workflows/flare.yml \
-                   .github/workflows/receipt.yml templates/github/workflows/*.yml; do
+                   .github/workflows/receipt.yml templates/github/workflows/*.yml templates/gitlab/dawnfix.gitlab-ci.yml; do
             check "$f" "$(sed -n 's/^  DAWNFIX_VERSION: "\(.*\)"$/\1/p' "$f")"
           done
           exit "$bad"

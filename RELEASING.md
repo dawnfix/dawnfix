@@ -72,8 +72,8 @@ tokens". Now push the tag (below).
 2. Tag and push:
 
 ```sh
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.4.0
+git push origin v0.4.0
 ```
 
 That is all: the release workflow tests, builds, publishes to PyPI and npm, and moves `v0`.

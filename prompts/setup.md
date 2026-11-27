@@ -12,14 +12,14 @@ writes (a cloud stack, a file, a repo variable, a commit, a PR).
 
 Hard rules:
 - Never ask me to paste a secret into this chat, and never print or echo one. That covers
-  the Anthropic API key, the optional DAWNFIX_ENTERPRISE_KEY, PATs and cloud keys. I set secrets
+  my AI API key (Claude today), the optional DAWNFIX_ENTERPRISE_KEY, PATs and cloud keys. I set secrets
   myself in my own terminal with `gh secret set NAME --repo <repo>` (gh asks without echo).
 - The AWS role and the GCP identity must be read-only. If the read-only check fails, stop the
   cloud part and tell me which actions are the problem. Do not edit the policy to make it pass.
 - Never push to the default branch. Everything lands through a PR I review.
 
 Before step 1, tell me plainly what this costs me (Dawnfix itself is free, no key): my own
-Anthropic tokens, only on runs that find a new error; GitHub Actions minutes (the hourly read
+Claude tokens (on my AI API key), only on runs that find a new error; GitHub Actions minutes (the hourly read
 job is about a minute a run, ~720 a month; free on public repos); small CloudWatch API charges
 (GetMetricData $0.01 per 1,000 metrics, for load balancer 5xx).
 
@@ -73,7 +73,7 @@ job is about a minute a run, ~720 a month; free on public repos); small CloudWat
    .github/workflows/dawnfix.yml | sort -u), e.g. DAWNFIX_AWS_ROLE_ARN when init was not given
    the role. Show them as a list, then set them on one yes with gh variable set NAME --repo
    <repo> --body <value>.
-   Secrets, which I type in my terminal: gh secret set ANTHROPIC_API_KEY --repo <repo>. Optional:
+   Secrets, which I type in my terminal: gh secret set DAWNFIX_AI_API_KEY --repo <repo> (my AI API key, Claude today). Optional:
    DAWNFIX_ENTERPRISE_KEY (Enterprise only: turns on hosted reporting at dawnfix.dev; without it nothing
    is sent anywhere; to set who gets the hosted digest, I run, in my own terminal,
    sh SRC/hosted/service.sh workspace --emails a@example.com,b@example.com). For plan or draft-pr, PRs made with GITHUB_TOKEN do not trigger CI: explain

@@ -48,7 +48,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "issues": { "enum": ["github", "linear", "jira", "none"] },
+        "issues": { "enum": ["github", "host", "linear", "jira", "none"] },
         "digest": { "type": "array", "items": { "type": "string", "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" } }
       }
     },

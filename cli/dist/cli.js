@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dawnfix 0.3.1: npx dawnfix init | doctor | flare.
+// Dawnfix 0.4.0: npx dawnfix init | doctor | flare.
 // Source available under FSL-1.1-ALv2 (see LICENSE in this package).
 // GENERATED from cli/src/ and flare/src/ by `npm run build` (esbuild, one file, no dependencies). Do not edit.
 import { createRequire as __dawnfixRequire } from 'node:module';
@@ -39,6 +39,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toBinaryNode = Uint8Array.fromBase64 || ((base64) => new Uint8Array(Buffer.from(base64, "base64")));
 
 // node_modules/yaml/dist/nodes/identity.js
 var require_identity = __commonJS({
@@ -9327,7 +9328,7 @@ var config_schema_default = {
       type: "object",
       additionalProperties: false,
       properties: {
-        issues: { enum: ["github", "linear", "jira", "none"] },
+        issues: { enum: ["github", "host", "linear", "jira", "none"] },
         digest: { type: "array", items: { type: "string", pattern: "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$" } }
       }
     },
@@ -9437,6 +9438,119 @@ var config_schema_default = {
   }
 };
 
+// src/gitlab.mjs
+import { createHash } from "node:crypto";
+
+// ../templates/gitlab/dawnfix.gitlab-ci.yml
+var dawnfix_gitlab_ci_default = __toBinaryNode("IyBTUERYLUxpY2Vuc2UtSWRlbnRpZmllcjogRlNMLTEuMS1BTHYyCiMgRGF3bmZpeCBmb3IgR2l0TGFiIENJIChodHRwczovL2dpdGh1Yi5jb20vZGF3bmZpeC9kYXduZml4KS4gQ29weSB0aGlzIGZpbGUsIG9yIGluY2x1ZGUgaXQgYXQgYQojIHBpbm5lZCByZWxlYXNlIHRhZyB3aXRoIGl0cyBoYXNoIChgbnB4IGRhd25maXggaW5pdCAtLWhvc3QgZ2l0bGFiYCB3cml0ZXMgdGhpcyBmb3IgeW91KToKIwojICAgaW5jbHVkZToKIyAgICAgLSByZW1vdGU6IGh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9kYXduZml4L2Rhd25maXgvdjxWRVJTSU9OPi90ZW1wbGF0ZXMvZ2l0bGFiL2Rhd25maXguZ2l0bGFiLWNpLnltbAojICAgICAgIGludGVncml0eTogc2hhMjU2LTxiYXNlNjQgU0hBLTI1NiBvZiB0aGlzIGZpbGU+CiMKIyBUaGUgaGFzaDogY3VybCAtZnNTTCA8dGhhdCBVUkw+IHwgb3BlbnNzbCBkZ3N0IC1zaGEyNTYgLWJpbmFyeSB8IG9wZW5zc2wgYmFzZTY0IC1BCiMKIyBGb3VyIGpvYnMsIGVhY2ggYSBmcmVzaCBjb250YWluZXIgaG9sZGluZyBvbmUgc2VjcmV0IG9ubHk6CiMgICBkYXduZml4LXJlYWQgICAgIHRoZSBjbG91ZCBPSURDIHRva2VuIChpZF90b2tlbnM6KSwgcmVhZC1vbmx5OyB3cml0ZXMgdGhlIGZpbmRpbmdzCiMgICBkYXduZml4LWFnZW50ICAgIHRoZSBBSSBrZXkgb25seSAoZW52aXJvbm1lbnQgZGF3bmZpeC1hZ2VudCk7IHJ1bnMgQ2xhdWRlIENvZGUuIEl0IHJ1bnMgbm8KIyAgICAgICAgICAgICAgICAgICAgZ2l0IGFuZCBob2xkcyBubyByZXBvIHRva2VuOiBpdHMgb25seSBvdXRwdXQgaXMgdGhlIGNoYW5nZWQgZmlsZXMgYW5kIHRoZQojICAgICAgICAgICAgICAgICAgICBpc3N1ZSBib2RpZXMsIGFzIGRhdGEKIyAgIGRhd25maXgtcHVibGlzaCAgdGhlIHJlcG8gdG9rZW4gb25seSAoZW52aXJvbm1lbnQgZGF3bmZpeC1wdWJsaXNoKTsgYSBmcmVzaCBjaGVja291dCB0aGF0CiMgICAgICAgICAgICAgICAgICAgIGNoZWNrcyBldmVyeSBmaWxlIGZyb20gc2NyYXRjaCAobm8gLmdpdCwgbm8gQ0kgY29uZmlnLCBubyBzeW1saW5rcywKIyAgICAgICAgICAgICAgICAgICAgc3VibW9kdWxlcyBvciBiaW5hcmllcywgYSBjcmVkZW50aWFsIHNjYW4pLCBjb21taXRzIHdpdGggaG9va3Mgb2ZmLCBwdXNoZXMKIyAgICAgICAgICAgICAgICAgICAgYW5kIG9wZW5zIGEgRFJBRlQgbWVyZ2UgcmVxdWVzdCBvciBhbiBpc3N1ZS4gTmV2ZXIgbWVyZ2VzLgojICAgZGF3bmZpeC1yZXBvcnQgICB0aGUgRW50ZXJwcmlzZSBrZXkgb25seSAoZW52aXJvbm1lbnQgZGF3bmZpeC1yZXBvcnQpOyBvcHRpb25hbAojCiMgQ0kvQ0QgdmFyaWFibGVzIChTZXR0aW5ncyA+IENJL0NEID4gVmFyaWFibGVzKS4gU2VjcmV0cyBhcmUgbWFza2VkLCBwcm90ZWN0ZWQsIGFuZCBzY29wZWQgdG8KIyBPTkUgZW52aXJvbm1lbnQsIHNvIG5vIG90aGVyIGpvYiBldmVyIGhvbGRzIHRoZW06CiMgICBEQVdORklYX0FJX0FQSV9LRVkgICAgICBzY29wZSBkYXduZml4LWFnZW50ICAgICB5b3VyIEFJIEFQSSBrZXkgKENsYXVkZSB0b2RheSkKIyAgIERBV05GSVhfSE9TVF9UT0tFTiAgICAgIHNjb3BlIGRhd25maXgtcHVibGlzaCAgIHByb2plY3QgYWNjZXNzIHRva2VuOiBEZXZlbG9wZXIsIGFwaSArIHdyaXRlX3JlcG9zaXRvcnkKIyAgIERBV05GSVhfRU5URVJQUklTRV9LRVkgIHNjb3BlIGRhd25maXgtcmVwb3J0ICAgIG9wdGlvbmFsLCBFbnRlcnByaXNlIG9ubHkKIyAgIERBV05GSVhfQVdTX1JPTEVfQVJOICsgREFXTkZJWF9BV1NfUkVHSU9OLCBvciBEQVdORklYX0dDUF9XSUZfUFJPVklERVIgKG5vdCBzZWNyZXQpCiMgU2hhcmVkIHJ1bm5lcnM6IHN1cHBvcnRlZDsgQ2xhdWRlIENvZGUncyBzYW5kYm94IHN0YXJ0cyAoYnViYmxld3JhcCwgaW4gdGhlIGFnZW50IGpvYikuCiMgUmVjb21tZW5kZWQ6IHRoZSBydW5uZXIgZmVhdHVyZSBmbGFnIEZGX0dJVF9VUkxTX1dJVEhPVVRfVE9LRU5TLCBhbmQgdGhlIHByb2plY3QncyBqb2IgdG9rZW4KIyBsaW1pdGVkIChTZXR0aW5ncyA+IENJL0NEID4gSm9iIHRva2VuIHBlcm1pc3Npb25zKS4gVGhlIGFnZW50IGpvYiBuZXZlciBjbG9uZXMgKEdJVF9TVFJBVEVHWToKIyBub25lKSBhbmQgdW5zZXRzIGV2ZXJ5IENJIHRva2VuIGJlZm9yZSB0aGUgYWdlbnQgcnVucy4KIyBEYXduZml4IGJyYW5jaGVzIGFyZSBwdXNoZWQgd2l0aCBgLW8gY2kuc2tpcGA6IG5vIHBpcGVsaW5lIHJ1bnMgb24gdGhlbSBieSB0aGVtc2VsdmVzLiBUaGUKIyBtZXJnZSByZXF1ZXN0J3Mgb3duIHBpcGVsaW5lIHJ1bnMgd2hlbiBhIHBlcnNvbiBydW5zIGl0IG9yIHB1c2hlcyB0byB0aGUgYnJhbmNoLCBvciB3aGVuIHlvdXIKIyBjb25maWcgZGVmaW5lcyBtZXJnZSByZXF1ZXN0IHBpcGVsaW5lcyAodGhlbiBpdCBydW5zIHlvdXIgdW5jaGFuZ2VkIENJIGZpbGVzOiBwdWJsaXNoIHJlZnVzZXMKIyBhbnkgY2hhbmdlIHRvIENJIGNvbmZpZywgbG9jYWwgaW5jbHVkZXMgaW5jbHVkZWQpLgojIFRoZSBqb2JzIGFyZSBpbiB0aGUgYHRlc3RgIHN0YWdlIChvbmUgb2YgR2l0TGFiJ3MgZGVmYXVsdCBzdGFnZXM7IGlmIHlvdXIgZmlsZSBsaXN0cyBpdHMgb3duCiMgYHN0YWdlczpgLCBrZWVwIGB0ZXN0YCBpbiBpdCkgYW5kIG9yZGVyZWQgYnkgYG5lZWRzOmAuCiMgVGhlIHNjaGVkdWxlOiBhIHBpcGVsaW5lIHNjaGVkdWxlIG9uIHRoZSBkZWZhdWx0IGJyYW5jaCB3aXRoIERBV05GSVhfUlVOPXRydWUuIFRoZSBqb2JzIHJ1bgojIG9ubHkgd2hlbiBEQVdORklYX1JVTiBpcyAidHJ1ZSIsIHNvIHlvdXIgb3RoZXIgcGlwZWxpbmVzIGFyZSB1bnRvdWNoZWQuCgp2YXJpYWJsZXM6CiAgREFXTkZJWF9WRVJTSU9OOiAiMC40LjAiCiAgREFXTkZJWF9QSVBfU1BFQzogIiIgICAgICAgICAgIyBkZWZhdWx0IGRhd25maXg9PSREQVdORklYX1ZFUlNJT04gKGEgd2hlZWwgVVJMIGZvciBhIHRlc3QgYnVpbGQpCiAgREFXTkZJWF9BVVRPTk9NWTogIiIgICAgICAgICAgIyBvdmVycmlkZXMgLmRhd25maXgueW1sOiBkaWFnbm9zZSB8IHBsYW4gfCBkcmFmdC1wcgogIERBV05GSVhfQUlfTU9ERUw6ICIiICAgICAgICAgICMgZGVmYXVsdCBzb25uZXQKICBEQVdORklYX0lOU1RBTExfQ09NTUFORDogIiIgICAjIGluc3RhbGxzIHlvdXIgZGVwZW5kZW5jaWVzIGJlZm9yZSB0aGUgYWdlbnQgcnVucyAoZml4IG1vZGVzKQogIERBV05GSVhfUEFTU19FTlY6ICIiICAgICAgICAgICMgbmFtZXMgb2Ygbm9uLXNlY3JldCB2YXJpYWJsZXMgdGhlIGFnZW50IG1heSBzZWUgKGUuZy4gYSB0b29sY2hhaW4gcGF0aCkKICBEQVdORklYX0JBU0VMSU5FOiAiIiAgICAgICAgICAjICJ0cnVlIjogcmVjb3JkIHdoYXQgaXMgZmFpbGluZyBub3csIG9wZW4gbm90aGluZwogIERBV05GSVhfRFJZX1JVTjogIiIgICAgICAgICAgICMgInRydWUiOiBwcmludCB3aGF0IHdvdWxkIGxlYXZlIHlvdXIgY2xvdWQsIHNlbmQgbm90aGluZwoKLmRhd25maXgtcnVsZXM6CiAgcnVsZXM6CiAgICAtIGlmOiAkREFXTkZJWF9SVU4gPT0gInRydWUiICYmICgkQ0lfUElQRUxJTkVfU09VUkNFID09ICJzY2hlZHVsZSIgfHwgJENJX1BJUEVMSU5FX1NPVVJDRSA9PSAid2ViIiB8fCAkQ0lfUElQRUxJTkVfU09VUkNFID09ICJhcGkiKQoKLmRhd25maXgtcHl0aG9uOgogIGV4dGVuZHM6IC5kYXduZml4LXJ1bGVzCiAgaW1hZ2U6IHB5dGhvbjozLjEyLXNsaW0tdHJpeGllQHNoYTI1NjoxOTEwODNjZGY2YzdiZGE4Yzc2MTU4OTgzMTYzZWFkNWQ1Y2Y3Yjc3Y2YzMDMzZTgwNWJiMGY1Mjk2ZjUxYjRiCgouZGF3bmZpeC1pbnN0YWxsOiAmZGF3bmZpeC1pbnN0YWxsIHwKICBweXRob24zIC1tIHZlbnYgL29wdC9kYXduZml4CiAgL29wdC9kYXduZml4L2Jpbi9waXAgaW5zdGFsbCAtLXF1aWV0IC0tZGlzYWJsZS1waXAtdmVyc2lvbi1jaGVjayAiJHtEQVdORklYX1BJUF9TUEVDOi1kYXduZml4PT0kREFXTkZJWF9WRVJTSU9OfSR7REFXTkZJWF9QSVBfRVhUUkF9IgogIGV4cG9ydCBQQVRIPSIvb3B0L2Rhd25maXgvYmluOiRQQVRIIgoKZGF3bmZpeC1yZWFkOgogIGV4dGVuZHM6IC5kYXduZml4LXB5dGhvbgogIHN0YWdlOiB0ZXN0CiAgbmVlZHM6IFtdCiAgaWRfdG9rZW5zOgogICAgR0lUTEFCX09JRENfVE9LRU46CiAgICAgIGF1ZDogJENJX1NFUlZFUl9VUkwKICBjYWNoZToKICAgIGtleTogZGF3bmZpeC1zdGF0ZS0kQ0lfREVGQVVMVF9CUkFOQ0gKICAgIHBhdGhzOiBbLmRhd25maXgtc3RhdGUvXQogICAgcG9saWN5OiBwdWxsLXB1c2gKICBzY3JpcHQ6CiAgICAtICdbIC16ICIkREFXTkZJWF9HQ1BfV0lGX1BST1ZJREVSIiBdIHx8IGV4cG9ydCBEQVdORklYX1BJUF9FWFRSQT0iW2djcF0iJwogICAgLSAqZGF3bmZpeC1pbnN0YWxsCiAgICAtIHwKICAgICAgdW1hc2sgMDc3CiAgICAgIG1rZGlyIC1wIC9ydW4vZGF3bmZpeCAmJiBwcmludGYgJXMgIiRHSVRMQUJfT0lEQ19UT0tFTiIgPiAvcnVuL2Rhd25maXgvb2lkYy10b2tlbgogICAgICBpZiBbIC1uICIkREFXTkZJWF9BV1NfUk9MRV9BUk4iIF07IHRoZW4KICAgICAgICBleHBvcnQgQVdTX1JPTEVfQVJOPSIkREFXTkZJWF9BV1NfUk9MRV9BUk4iIEFXU19XRUJfSURFTlRJVFlfVE9LRU5fRklMRT0vcnVuL2Rhd25maXgvb2lkYy10b2tlbgogICAgICAgIGV4cG9ydCBBV1NfUk9MRV9TRVNTSU9OX05BTUU9ImRhd25maXgtJENJX1BJUEVMSU5FX0lEIiBBV1NfUkVHSU9OPSIke0RBV05GSVhfQVdTX1JFR0lPTjotdXMtZWFzdC0xfSIKICAgICAgZmkKICAgICAgaWYgWyAtbiAiJERBV05GSVhfR0NQX1dJRl9QUk9WSURFUiIgXTsgdGhlbgogICAgICAgIHByaW50ZiAneyJ0eXBlIjoiZXh0ZXJuYWxfYWNjb3VudCIsImF1ZGllbmNlIjoiLy9pYW0uZ29vZ2xlYXBpcy5jb20vJXMiLCJzdWJqZWN0X3Rva2VuX3R5cGUiOiJ1cm46aWV0ZjpwYXJhbXM6b2F1dGg6dG9rZW4tdHlwZTpqd3QiLCJ0b2tlbl91cmwiOiJodHRwczovL3N0cy5nb29nbGVhcGlzLmNvbS92MS90b2tlbiIsImNyZWRlbnRpYWxfc291cmNlIjp7ImZpbGUiOiIvcnVuL2Rhd25maXgvb2lkYy10b2tlbiJ9fScgXAogICAgICAgICAgIiREQVdORklYX0dDUF9XSUZfUFJPVklERVIiID4gL3J1bi9kYXduZml4L2djcC5qc29uCiAgICAgICAgZXhwb3J0IEdPT0dMRV9BUFBMSUNBVElPTl9DUkVERU5USUFMUz0vcnVuL2Rhd25maXgvZ2NwLmpzb24KICAgICAgZmkKICAgICAgdW1hc2sgMDIyCiAgICAgIHNldCAtLSAtLWNvbmZpZyAuZGF3bmZpeC55bWwgLS1zdGF0ZSAuZGF3bmZpeC1zdGF0ZS9zdGF0ZS5qc29uIC0tb3V0IC5kYXduZml4LW91dC9yZWFkCiAgICAgIFsgIiREQVdORklYX0JBU0VMSU5FIiAhPSAidHJ1ZSIgXSB8fCBzZXQgLS0gIiRAIiAtLWJhc2VsaW5lCiAgICAgIFsgIiREQVdORklYX0RSWV9SVU4iICE9ICJ0cnVlIiBdIHx8IHNldCAtLSAiJEAiIC0tZHJ5LXJ1bgogICAgICBkYXduZml4IHJ1biByZWFkICIkQCIKICAgICAgIyBUaGUgY29tbWl0J3MgZmlsZXMgZm9yIHRoZSBhZ2VudCBqb2IsIHdpdGhvdXQgLmdpdCAodGhlIHJ1bm5lcidzIGNsb25lIGNvbmZpZyBjYXJyaWVzCiAgICAgICMgaXRzIGNyZWRlbnRpYWxzKTogdGhlIGFnZW50IGpvYiBnZXRzIG5vIGdpdCBtZXRhZGF0YSBhbmQgbm8gdG9rZW4gZnJvbSBoZXJlLgogICAgICBta2RpciAtcCAuZGF3bmZpeC1vdXQvc291cmNlCiAgICAgIHRhciAtQyAiJENJX1BST0pFQ1RfRElSIiAtLWV4Y2x1ZGU9LmdpdCAtLWV4Y2x1ZGU9Li8uZGF3bmZpeC1vdXQgLS1leGNsdWRlPS4vLmRhd25maXgtc3RhdGUgXAogICAgICAgIC1jZiAuZGF3bmZpeC1vdXQvc291cmNlL3NvdXJjZS50YXIgLgogIGFydGlmYWN0czoKICAgIHBhdGhzOiBbLmRhd25maXgtb3V0L3JlYWQvLCAuZGF3bmZpeC1vdXQvc291cmNlL10KICAgIGV4cGlyZV9pbjogMyBkYXlzCgpkYXduZml4LWFnZW50OgogIGV4dGVuZHM6IC5kYXduZml4LXJ1bGVzCiAgaW1hZ2U6IG5vZGU6MjItdHJpeGllLXNsaW1Ac2hhMjU2OmYwOTYwZjhkYzA0N2YzNThlM2ZiNDI4ZjM2Y2NiYTIxNzMyMTk0ZmE1ZjBjYWM4NDlmNDAxZTYzZTYyZmI5ZTYKICBzdGFnZTogdGVzdAogIG5lZWRzOiBbZGF3bmZpeC1yZWFkXQogIGVudmlyb25tZW50OiB7IG5hbWU6IGRhd25maXgtYWdlbnQsIGFjdGlvbjogcHJlcGFyZSB9CiAgdmFyaWFibGVzOgogICAgIyBObyBjbG9uZTogdGhlIHJ1bm5lcidzIGNsb25lIGNhcnJpZXMgQ0lfSk9CX1RPS0VOIGluIC5naXQvY29uZmlnLiBUaGUgY29kZSBjb21lcyBhcyB0aGUKICAgICMgcmVhZCBqb2IncyB0b2tlbmxlc3MgYXJjaGl2ZSwgdW5wYWNrZWQgd2hlcmUgbm8gLmdpdCBleGlzdHMuCiAgICBHSVRfU1RSQVRFR1k6IG5vbmUKICAgIERBV05GSVhfV09SS0RJUjogL2Rhd25maXgvd29yawogIHNjcmlwdDoKICAgIC0gfAogICAgICBoYXNfbmV3PSQoc2VkIC1uICdzL15oYXNfbmV3PS8vcCcgLmRhd25maXgtb3V0L3JlYWQvb3V0cHV0cy5lbnYgMj4vZGV2L251bGwpCiAgICAgIGlmIFsgIiRoYXNfbmV3IiAhPSAidHJ1ZSIgXTsgdGhlbiBlY2hvICJkYXduZml4OiBub3RoaW5nIG5ldzsgdGhlIGFnZW50IGRvZXMgbm90IHJ1biI7IGV4aXQgMDsgZmkKICAgICAgYXV0b25vbXk9JChzZWQgLW4gJ3MvXmF1dG9ub215PS8vcCcgLmRhd25maXgtb3V0L3JlYWQvb3V0cHV0cy5lbnYpCiAgICAgIG1vZGU9Zml4OyBbICIkYXV0b25vbXkiICE9ICJkaWFnbm9zZSIgXSB8fCBtb2RlPWRpYWdub3NlCiAgICAgIGV4cG9ydCBERUJJQU5fRlJPTlRFTkQ9bm9uaW50ZXJhY3RpdmU7IGFwdC1nZXQgdXBkYXRlIC1xcSAmJiBhcHQtZ2V0IGluc3RhbGwgLXkgLXFxIC0tbm8taW5zdGFsbC1yZWNvbW1lbmRzIHB5dGhvbjMgcHl0aG9uMy12ZW52IGJ1YmJsZXdyYXAgc29jYXQgPi9kZXYvbnVsbAogICAgICBta2RpciAtcCAiJERBV05GSVhfV09SS0RJUiIgJiYgdGFyIC14ZiAuZGF3bmZpeC1vdXQvc291cmNlL3NvdXJjZS50YXIgLUMgIiREQVdORklYX1dPUktESVIiIC0tbm8tc2FtZS1vd25lcgogICAgICAjIE5vIENJIGNyZWRlbnRpYWwgcmVhY2hlcyB0aGUgYWdlbnQ6IGV2ZXJ5IENJIHRva2VuLCBwYXNzd29yZCBhbmQgY3JlZGVudGlhbGVkIFVSTCBnb2VzCiAgICAgICMgYmVmb3JlIGFueXRoaW5nIGVsc2UgcnVucyAoZGF3bmZpeCBydW4gYWdlbnQgLS1pc29sYXRpb24gam9iIHJlZnVzZXMgdG8gc3RhcnQgb3RoZXJ3aXNlKS4KICAgICAgZm9yIHYgaW4gJChlbnYgfCBzZWQgLW4gJ3MvXlwoW0EtWmEtel9dW0EtWmEtejAtOV9dKlwpPS4qL1wxL3AnIHwgZ3JlcCAtRSAnXkNJX1tBLVphLXowLTlfXSooVE9LRU58UEFTU1dPUkR8SldUKXxQQVNTV09SRHxeQ0lfUkVQT1NJVE9SWV9VUkwkfF5HSVRfQVNLUEFTUyR8XlNTSF9BU0tQQVNTJHxeR0lUX0NPTkZJR18nKTsgZG8gdW5zZXQgIiR2IjsgZG9uZQogICAgLSAqZGF3bmZpeC1pbnN0YWxsCiAgICAtIHwKICAgICAgaWYgWyAtbiAiJERBV05GSVhfSU5TVEFMTF9DT01NQU5EIiBdICYmIFsgIiRtb2RlIiA9IGZpeCBdOyB0aGVuIChjZCAiJERBV05GSVhfV09SS0RJUiIgJiYgc2ggLWMgIiREQVdORklYX0lOU1RBTExfQ09NTUFORCIpOyBmaQogICAgICAjIC0taXNvbGF0aW9uIGpvYjogdGhpcyBqb2IgaXMgdGhlIGFnZW50J3MgaXNvbGF0aW9uLiBJdCBydW5zIG5vIGdpdCBjb21tYW5kIGFuZCBob2xkcyBubwogICAgICAjIHJlcG8gdG9rZW47IHRoZSBjaGFuZ2VkIGZpbGVzIGdvIHRvIHRoZSBwdWJsaXNoIGpvYiBhcyBkYXRhLgogICAgICBzZXQgLS0KICAgICAgZm9yIG4gaW4gJERBV05GSVhfUEFTU19FTlY7IGRvIHNldCAtLSAiJEAiIC0tcGFzcy1lbnYgIiRuIjsgZG9uZQogICAgICBkYXduZml4IHJ1biBhZ2VudCAtLW1vZGUgIiRtb2RlIiAtLWlzb2xhdGlvbiBqb2IgLS1kaXIgIiREQVdORklYX1dPUktESVIiIFwKICAgICAgICAtLWZpbmRpbmdzICIkQ0lfUFJPSkVDVF9ESVIvLmRhd25maXgtb3V0L3JlYWQvZmluZGluZ3MuanNvbiIgLS1vdXQgL3RtcC9kYXduZml4LWFnZW50ICIkQCIKICAgICAgcm0gLXJmIC5kYXduZml4LW91dC9hZ2VudCAmJiBjcCAtUiAvdG1wL2Rhd25maXgtYWdlbnQgLmRhd25maXgtb3V0L2FnZW50CiAgYXJ0aWZhY3RzOgogICAgcGF0aHM6IFsuZGF3bmZpeC1vdXQvYWdlbnQvXQogICAgZXhwaXJlX2luOiAzIGRheXMKCmRhd25maXgtcHVibGlzaDoKICBleHRlbmRzOiAuZGF3bmZpeC1weXRob24KICBzdGFnZTogdGVzdAogIG5lZWRzOiBbZGF3bmZpeC1yZWFkLCBkYXduZml4LWFnZW50XQogIGVudmlyb25tZW50OiB7IG5hbWU6IGRhd25maXgtcHVibGlzaCwgYWN0aW9uOiBwcmVwYXJlIH0KICB2YXJpYWJsZXM6CiAgICAjIFRoZSBydW5uZXIncyBvd24gY2xvbmUgY2FycmllcyBpdHMgY3JlZGVudGlhbCBzZXR0aW5ncyAoaW5jbHVkZS5wYXRoLCBjcmVkZW50aWFsLiopLAogICAgIyB3aGljaCBwdWJsaXNoIHJlZnVzZXMgdG8gcHVzaCBmcm9tLiBUaGUgam9iIGZldGNoZXMgdGhlIHBpcGVsaW5lJ3MgY29tbWl0IGl0c2VsZiBpbnRvCiAgICAjIGEgY2xlYW4gcmVwb3NpdG9yeSBpbnN0ZWFkLCByZWFkIHdpdGggdGhlIGpvYidzIG93biBDSV9KT0JfVE9LRU4uCiAgICBHSVRfU1RSQVRFR1k6IG5vbmUKICBzY3JpcHQ6CiAgICAtIHwKICAgICAgbWtkaXIgLXAgLmRhd25maXgtb3V0L3B1Ymxpc2gKICAgICAgaWYgWyAhIC1mIC5kYXduZml4LW91dC9hZ2VudC9tZXRhLmpzb24gXTsgdGhlbiBlY2hvICJkYXduZml4OiBub3RoaW5nIHRvIHB1Ymxpc2giOyBleGl0IDA7IGZpCiAgICAgIGV4cG9ydCBERUJJQU5fRlJPTlRFTkQ9bm9uaW50ZXJhY3RpdmU7IGFwdC1nZXQgdXBkYXRlIC1xcSAmJiBhcHQtZ2V0IGluc3RhbGwgLXkgLXFxIC0tbm8taW5zdGFsbC1yZWNvbW1lbmRzIGdpdCBjYS1jZXJ0aWZpY2F0ZXMgPi9kZXYvbnVsbAogICAgICAjIEEgZnJlc2ggY2hlY2tvdXQgb2YgdGhlIHBpcGVsaW5lJ3MgY29tbWl0OyB0aGUgYXJ0aWZhY3QncyBmaWxlcyBhcmUgY2hlY2tlZCBmcm9tIHNjcmF0Y2guCiAgICAgIGdpdCBpbml0IC1xIC90bXAvZGF3bmZpeC1jaGVja291dAogICAgICBnaXQgLUMgL3RtcC9kYXduZml4LWNoZWNrb3V0IC1jIGNyZWRlbnRpYWwuaGVscGVyPSBmZXRjaCAtcSAtLW5vLXRhZ3MgIiRDSV9SRVBPU0lUT1JZX1VSTCIgIiRDSV9DT01NSVRfU0hBIgogICAgICBnaXQgLUMgL3RtcC9kYXduZml4LWNoZWNrb3V0IC1jIGNvcmUuaG9va3NQYXRoPS9kZXYvbnVsbCBjaGVja291dCAtcSAtLWRldGFjaCAiJENJX0NPTU1JVF9TSEEiCiAgICAtICpkYXduZml4LWluc3RhbGwKICAgIC0gfAogICAgICAjIFRoZSBicmFuY2ggaXMgcHVzaGVkIHdpdGggLW8gY2kuc2tpcDogbm8gcGlwZWxpbmUgcnVucyBvbiBpdCBieSBpdHNlbGYuCiAgICAgIGRhd25maXggcnVuIHB1Ymxpc2ggLS1pc29sYXRpb24gam9iIC0tZGlyIC90bXAvZGF3bmZpeC1jaGVja291dCAtLWFydGlmYWN0IC5kYXduZml4LW91dC9hZ2VudCBcCiAgICAgICAgLS1maW5kaW5ncyAuZGF3bmZpeC1vdXQvcmVhZC9maW5kaW5ncy5qc29uIC0tb3V0IC5kYXduZml4LW91dC9wdWJsaXNoCiAgYXJ0aWZhY3RzOgogICAgcGF0aHM6IFsuZGF3bmZpeC1vdXQvcHVibGlzaC9dCiAgICBleHBpcmVfaW46IDMgZGF5cwogICAgd2hlbjogYWx3YXlzCgpkYXduZml4LXJlcG9ydDoKICBleHRlbmRzOiAuZGF3bmZpeC1weXRob24KICBzdGFnZTogdGVzdAogIG5lZWRzOgogICAgLSBkYXduZml4LXJlYWQKICAgIC0geyBqb2I6IGRhd25maXgtcHVibGlzaCwgb3B0aW9uYWw6IHRydWUgfQogIGVudmlyb25tZW50OiB7IG5hbWU6IGRhd25maXgtcmVwb3J0LCBhY3Rpb246IHByZXBhcmUgfQogIGFsbG93X2ZhaWx1cmU6IHRydWUKICBzY3JpcHQ6CiAgICAjIFdpdGhvdXQgREFXTkZJWF9FTlRFUlBSSVNFX0tFWSB0aGUgcmVwb3J0IHN0YWdlIHByaW50cyBvbmUgbGluZSBhbmQgc2VuZHMgbm90aGluZy4KICAgIC0gKmRhd25maXgtaW5zdGFsbAogICAgLSB8CiAgICAgIHNldCAtLQogICAgICBbICEgLWYgLmRhd25maXgtb3V0L3JlYWQvaW5nZXN0Lmpzb24gXSB8fCBzZXQgLS0gIiRAIiAtLWluZ2VzdCAuZGF3bmZpeC1vdXQvcmVhZC9pbmdlc3QuanNvbgogICAgICBbICEgLWYgLmRhd25maXgtb3V0L3B1Ymxpc2gvb3BlbmVkLmpzb24gXSB8fCBzZXQgLS0gIiRAIiAtLW9wZW5lZCAuZGF3bmZpeC1vdXQvcHVibGlzaC9vcGVuZWQuanNvbgogICAgICBkYXduZml4IHJ1biByZXBvcnQgIiRAIgo=");
+
+// src/version.mjs
+var VERSION = true ? "0.4.0" : "0.0.0-dev";
+var TAG = `v${VERSION}`;
+var MAJOR_REF = `v${VERSION.split(".")[0]}`;
+var REPO_URL = "https://github.com/dawnfix/dawnfix";
+var RAW = `https://raw.githubusercontent.com/dawnfix/dawnfix/${TAG}`;
+
+// src/gitlab.mjs
+var TEMPLATE_PATH = "templates/gitlab/dawnfix.gitlab-ci.yml";
+var TEMPLATE_URL = `${RAW}/${TEMPLATE_PATH}`;
+var INTEGRITY = `sha256-${createHash("sha256").update(dawnfix_gitlab_ci_default).digest("base64")}`;
+var JOBS = ["dawnfix-read", "dawnfix-agent", "dawnfix-publish", "dawnfix-report"];
+var SECRETS = [
+  ["DAWNFIX_AI_API_KEY", "dawnfix-agent", "your AI API key (Claude today)"],
+  ["DAWNFIX_HOST_TOKEN", "dawnfix-publish", "a project access token: role Developer, scopes api and write_repository"],
+  ["DAWNFIX_ENTERPRISE_KEY", "dawnfix-report", "optional, Enterprise only"]
+];
+function includeSnippet() {
+  return ["include:", `  - remote: ${TEMPLATE_URL}`, `    integrity: ${INTEGRITY}`, ""].join("\n");
+}
+function hasDawnfix(text) {
+  return /templates\/gitlab\/dawnfix\.gitlab-ci\.yml/.test(text) || new RegExp(`^(${JOBS.join("|")}):`, "m").test(text);
+}
+function renderGitlabCi(a) {
+  const cloudVars = a.cloud === "aws" ? "  DAWNFIX_AWS_ROLE_ARN, DAWNFIX_AWS_REGION" : "  DAWNFIX_GCP_WIF_PROVIDER";
+  return [
+    `# Dawnfix (${REPO_URL}), written by \`npx dawnfix init --host gitlab\`.`,
+    `# The jobs (${JOBS.join(", ")}) are in the template`,
+    `# below, at release ${TAG}.`,
+    "# integrity: GitLab fetches the template and refuses to run the pipeline unless the",
+    "# sha256 of its bytes equals this hash, so you run exactly what was published at that tag.",
+    "# To upgrade, take the new include lines from `npx dawnfix@latest init --host gitlab --dry-run`.",
+    "# The jobs run only in pipelines with DAWNFIX_RUN=true (the schedule); other pipelines are untouched.",
+    "#",
+    "# CI/CD variables (Settings > CI/CD > Variables; `npx dawnfix init` prints the glab lines):",
+    ...SECRETS.map(([name, env, what]) => `#   ${name.padEnd(23)} masked, protected, environment ${env}:
+#   ${"".padEnd(23)} ${what}`),
+    `# Not secret:${cloudVars.slice(1)}`,
+    "# Optional: DAWNFIX_AUTONOMY, DAWNFIX_AI_MODEL, DAWNFIX_INSTALL_COMMAND",
+    includeSnippet()
+  ].join("\n");
+}
+function gitlabNextSteps(a, repo, { wroteCi }) {
+  const gl = repo.gitlab || { host: "gitlab.com", path: "GROUP/PROJECT" };
+  const name = gl.path.split("/").pop();
+  const selfManaged = gl.host !== "gitlab.com";
+  const b = repo.branch;
+  const out = ["Next steps. You run these; dawnfix never asks for or stores a secret.", ""];
+  let n = 1;
+  if (a.cloud === "aws") {
+    out.push(
+      `${n++}. The read-only AWS role (CloudFormation; logs and alarms read only, trusts only ${gl.path} on ${b}):`,
+      `   ${REPO_URL}/blob/${TAG}/infra/aws/dawnfix-read-role-gitlab.yaml`,
+      `   curl -fsSLO ${RAW}/infra/aws/dawnfix-read-role-gitlab.yaml`,
+      "   aws cloudformation deploy --template-file dawnfix-read-role-gitlab.yaml \\",
+      `     --stack-name dawnfix-read-${name} --capabilities CAPABILITY_NAMED_IAM \\`,
+      `     --parameter-overrides ProjectPath=${gl.path} Branch=${b} \\`,
+      `       CreateOIDCProvider=true RoleName=dawnfix-read-${name} LogGroupPrefix='*'${selfManaged ? ` GitLabUrl=https://${gl.host}` : ""}`,
+      "   (The account has the GitLab OIDC provider already? CreateOIDCProvider=false and",
+      `   ExistingOIDCProviderArn=<its ARN>: ${REPO_URL}/blob/${TAG}/infra/aws/README.md)`
+    );
+    if (a.awsRoleArn) out.push(`   glab variable set DAWNFIX_AWS_ROLE_ARN --value "${a.awsRoleArn}"`);
+    else {
+      out.push(
+        `   glab variable set DAWNFIX_AWS_ROLE_ARN --value "$(aws cloudformation describe-stacks --stack-name dawnfix-read-${name} \\`,
+        `     --query "Stacks[0].Outputs[?OutputKey=='RoleArn'].OutputValue" --output text)"`
+      );
+    }
+    out.push(`   glab variable set DAWNFIX_AWS_REGION --value ${a.awsRegion}`);
+  } else {
+    out.push(
+      `${n++}. Workload Identity Federation (roles/logging.viewer only, trusts only ${gl.path} on ${b}):`,
+      `   ${REPO_URL}/blob/${TAG}/infra/gcp/setup-wif-gitlab.sh`,
+      `   curl -fsSLO ${RAW}/infra/gcp/setup-wif-gitlab.sh`,
+      `   bash setup-wif-gitlab.sh --branch ${b}${selfManaged ? ` --gitlab-url https://${gl.host}` : ""} ${a.gcpProject} ${gl.path}`,
+      `   glab variable set DAWNFIX_GCP_WIF_PROVIDER --value "${a.gcpWifProvider || "<the provider name setup-wif-gitlab.sh prints>"}"`
+    );
+  }
+  const [ai, host, ent] = SECRETS;
+  const set = ([v, env]) => `glab variable set ${v} --masked --protected --scope ${env}`;
+  out.push(
+    `${n++}. Secrets: masked, protected, each scoped to the one environment (job) that uses it, so no`,
+    "   other job ever holds it. glab reads each value from stdin: `read -rs` keeps it off the screen and",
+    "   out of your shell history, and the access token goes from glab to glab without being shown.",
+    `   read -rs V && printf %s "$V" | ${set(ai)}; unset V   # ${ai[2]}`,
+    `   glab token create dawnfix --access-level developer --scope api --scope write_repository --duration 365d \\`,
+    `     | tr -d '\\n' | ${set(host)}`,
+    "     # the project access token (role Developer, scopes api and write_repository). Or create it in",
+    "     # Settings > Access tokens and set it with a read -rs line like the first.",
+    `   read -rs V && printf %s "$V" | ${set(ent)}; unset V   # ${ent[2]}`,
+    `   Protected variables reach protected branches only: keep ${b} protected (the default).`,
+    "   Recommended: the runner feature flag FF_GIT_URLS_WITHOUT_TOKENS, and the job token limited",
+    "   (Settings > CI/CD > Job token permissions). The agent job never clones and unsets every CI token.",
+    `${n++}. ${wroteCi ? "Commit .dawnfix.yml and .gitlab-ci.yml" : "Add the include to .gitlab-ci.yml, commit it with .dawnfix.yml"} on a branch, open a merge request and merge it.`,
+    `${n++}. The schedule (the jobs run only when DAWNFIX_RUN is true; keep the cron equal to .dawnfix.yml):`,
+    "   New projects block pipeline variables, which the schedule needs for DAWNFIX_RUN. Allow them for maintainers",
+    "   (Settings > CI/CD > Variables > Minimum role to use pipeline variables), or:",
+    `   glab api --method PUT "projects/:fullpath" --field ci_pipeline_variables_minimum_override_role=maintainer`,
+    `   glab schedule create --cron "${a.schedule}" --ref ${b} --description dawnfix --variable "DAWNFIX_RUN:true"`,
+    `${n++}. A first run by hand (or Build > Pipelines > Run pipeline with these variables):`,
+    `   glab ci run --branch ${b} --variables DAWNFIX_RUN:true --variables DAWNFIX_DRY_RUN:true   # prints exactly what would leave your account`,
+    `   glab ci run --branch ${b} --variables DAWNFIX_RUN:true --variables DAWNFIX_BASELINE:true  # records what is already failing, opens nothing`,
+    `${n++}. npx dawnfix doctor`
+  );
+  return out.join("\n") + "\n";
+}
+
 // src/repo.mjs
 import { execFileSync } from "node:child_process";
 import { existsSync as existsSync2 } from "node:fs";
@@ -9452,13 +9566,25 @@ function slugFromRemote(url) {
   const m = /github\.com[:/]+([A-Za-z0-9][A-Za-z0-9-]*)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?$/.exec(url || "");
   return m ? `${m[1]}/${m[2]}` : "";
 }
+function gitlabFromRemote(url) {
+  const u = String(url || "").trim();
+  const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(u) || /^(?:[^@/]+@)?([^/:]+):(?!\/\/)(.+)$/.exec(u);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  if (host !== "gitlab.com" && !host.includes("gitlab")) return null;
+  const path = m[2].replace(/\/+$/, "").replace(/\.git$/, "").replace(/^\/+/, "");
+  if (!/^[A-Za-z0-9_.][A-Za-z0-9_.-]*(\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+$/.test(path)) return null;
+  return { host, path };
+}
 function detectRepo(cwd) {
   const root = git(cwd, "rev-parse", "--show-toplevel");
   if (!root) return null;
-  const slug = slugFromRemote(git(root, "remote", "get-url", "origin"));
+  const origin = git(root, "remote", "get-url", "origin");
+  const slug = slugFromRemote(origin);
+  const gitlab = slug ? null : gitlabFromRemote(origin);
   const head = git(root, "symbolic-ref", "--short", "refs/remotes/origin/HEAD").replace(/^origin\//, "");
   const branch = head || git(root, "symbolic-ref", "--short", "HEAD") || "main";
-  return { root, slug, branch };
+  return { root, slug, gitlab, branch };
 }
 function detectCommands(root) {
   const has = (f) => existsSync2(join3(root, f));
@@ -9587,13 +9713,6 @@ function validate(schema, value, root = schema, path = "") {
   return errs;
 }
 
-// src/version.mjs
-var VERSION = true ? "0.3.1" : "0.0.0-dev";
-var TAG = `v${VERSION}`;
-var MAJOR_REF = `v${VERSION.split(".")[0]}`;
-var REPO_URL = "https://github.com/dawnfix/dawnfix";
-var RAW = `https://raw.githubusercontent.com/dawnfix/dawnfix/${TAG}`;
-
 // src/doctor.mjs
 var DOCTOR_HELP = `Usage: dawnfix doctor [--dir DIR] [--no-gh]
 
@@ -9601,7 +9720,8 @@ Checks the Dawnfix setup of the repo you are in:
   - .dawnfix.yml is valid (core's schema)
   - .github/workflows/ calls dawnfix/dawnfix/.github/workflows/dawnfix.yml at a pinned
     release (a tag such as v0 or v${VERSION}, or a commit SHA), or holds the copy-it-yourself
-    template, with the permissions its jobs need and the cron of .dawnfix.yml
+    template, with the permissions its jobs need and the cron of .dawnfix.yml;
+    on GitLab, .gitlab-ci.yml includes the Dawnfix template (pinned, with integrity)
   - the secrets and variables it uses exist (names only, through gh; --no-gh lists them)
   - Free or Enterprise: whether an Enterprise key is set
 Exit 0 when nothing failed, 1 otherwise.
@@ -9609,6 +9729,8 @@ Exit 0 when nothing failed, 1 otherwise.
 var NEEDED_PERMISSIONS = { contents: "write", "pull-requests": "write", issues: "write", "id-token": "write" };
 var USES = /^dawnfix\/dawnfix\/\.github\/workflows\/dawnfix\.yml(?:@(.*))?$/;
 var ENTERPRISE = ["DAWNFIX_ENTERPRISE_KEY"];
+var AI_SECRET = "DAWNFIX_AI_API_KEY";
+var FALLBACK_AI_SECRET = "ANTHROPIC_API_KEY";
 function readYaml(path) {
   return (0, import_yaml.parse)(readFileSync(path, "utf8"));
 }
@@ -9684,7 +9806,7 @@ ${DOCTOR_HELP}`);
     io2.stderr("dawnfix doctor: not inside a git repository\n");
     return 2;
   }
-  io2.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.root}
+  io2.stdout(`Dawnfix doctor ${VERSION}: ${repo.slug || repo.gitlab?.path || repo.root}
 
 `);
   const cfgPath = join4(repo.root, ".dawnfix.yml");
@@ -9709,10 +9831,33 @@ ${DOCTOR_HELP}`);
     }
   }
   const wf = findWorkflow(repo.root);
-  let needs = { secrets: ["ANTHROPIC_API_KEY"], vars: [] };
+  const ciPath = join4(repo.root, ".gitlab-ci.yml");
+  const ci = !wf && existsSync3(ciPath) ? readFileSync(ciPath, "utf8") : "";
+  if (ci && hasDawnfix(ci)) {
+    const tag = /dawnfix\/dawnfix\/(v\d+\.\d+\.\d+)\/templates\/gitlab\//.exec(ci)?.[1];
+    const integrity = /integrity:\s*["']?(sha256-[A-Za-z0-9+/=]+)/.exec(ci)?.[1];
+    if (!/templates\/gitlab\/dawnfix\.gitlab-ci\.yml/.test(ci)) ok(".gitlab-ci.yml defines the Dawnfix jobs (a copy of the template)");
+    else if (!tag) bad(".gitlab-ci.yml includes the Dawnfix template but not at a release tag: use the include lines of npx dawnfix init --host gitlab --dry-run");
+    else if (!integrity) warn(`.gitlab-ci.yml includes the Dawnfix template of ${tag} without integrity: (GitLab then runs whatever that URL serves)`);
+    else if (tag === `v${VERSION}` && integrity !== INTEGRITY) bad(`.gitlab-ci.yml: the integrity of the ${tag} template is ${INTEGRITY}, not ${integrity}`);
+    else ok(`.gitlab-ci.yml includes the Dawnfix template of ${tag}, pinned with its integrity`);
+    const sources = (config?.sources || []).map((s) => Object.keys(s)[0]);
+    const vars = [...sources.includes("aws") ? ["DAWNFIX_AWS_ROLE_ARN", "DAWNFIX_AWS_REGION"] : [], ...sources.includes("gcp") ? ["DAWNFIX_GCP_WIF_PROVIDER"] : []];
+    warn("GitLab: check by hand in Settings > CI/CD > Variables (and a pipeline schedule with DAWNFIX_RUN=true):");
+    for (const [name, env, what] of SECRETS) io2.stdout(`        secret ${name} (masked, protected, environment ${env}): ${what}
+`);
+    for (const name of vars) io2.stdout(`        variable ${name}
+`);
+    ok("plan: Free & source available, unless DAWNFIX_ENTERPRISE_KEY is set (hosted reporting, Enterprise)");
+    io2.stdout(failed ? `
+${failed} check(s) failed.
+` : "\nAll checks passed.\n");
+    return failed ? 1 : 0;
+  }
+  let needs = { secrets: [AI_SECRET], vars: [] };
   let passesKey = false;
   if (!wf) {
-    bad("no Dawnfix workflow in .github/workflows/: run npx dawnfix init");
+    bad(`no Dawnfix workflow in .github/workflows/${ci ? " and no Dawnfix include in .gitlab-ci.yml" : ""}: run npx dawnfix init`);
   } else {
     const text = readFileSync(join4(repo.root, wf.file), "utf8");
     if (wf.kind === "caller") {
@@ -9725,16 +9870,19 @@ ${DOCTOR_HELP}`);
       if (perms === "write-all" || missing.length === 0) ok("permissions cover every job (each job narrows them)");
       else bad(`${wf.file} must grant ${missing.join(", ")} (GitHub refuses to start a run whose jobs ask for more than the caller grants)`);
       const wfNeeds = referenced(JSON.stringify(wf.jobDoc.with || {}) + JSON.stringify(wf.jobDoc.secrets || {}));
-      needs = { secrets: [.../* @__PURE__ */ new Set(["ANTHROPIC_API_KEY", ...wfNeeds.secrets])], vars: wfNeeds.vars };
+      if (wfNeeds.secrets.includes(FALLBACK_AI_SECRET) && !wfNeeds.secrets.includes(AI_SECRET)) {
+        warn(`${wf.file} passes the deprecated ${FALLBACK_AI_SECRET} (fallback for this release only): pass ${AI_SECRET}: \${{ secrets.${AI_SECRET} }} instead`);
+      }
+      needs = { secrets: [.../* @__PURE__ */ new Set([AI_SECRET, ...wfNeeds.secrets.filter((x) => x !== FALLBACK_AI_SECRET)])], vars: wfNeeds.vars.filter((x) => x !== "DAWNFIX_AI_MODEL") };
       if (wf.jobDoc.secrets === "inherit") {
-        warn("secrets: inherit passes every secret of the repo to the workflow; pass ANTHROPIC_API_KEY (and DAWNFIX_ENTERPRISE_KEY) by name");
-        needs.secrets = ["ANTHROPIC_API_KEY"];
+        warn(`secrets: inherit passes every secret of the repo to the workflow; pass ${AI_SECRET} (and DAWNFIX_ENTERPRISE_KEY) by name`);
+        needs.secrets = [AI_SECRET];
       }
       passesKey = wf.jobDoc.secrets === "inherit" || ENTERPRISE.some((k) => wfNeeds.secrets.includes(k));
     } else {
       ok(`${wf.file} is the copy-it-yourself template of ${wf.ref}`);
       const r = referenced(text);
-      needs = { secrets: ["ANTHROPIC_API_KEY"], vars: r.vars.filter((x) => /ROLE_ARN|WIF_PROVIDER/.test(x)) };
+      needs = { secrets: [AI_SECRET], vars: r.vars.filter((x) => /ROLE_ARN|WIF_PROVIDER/.test(x)) };
       passesKey = true;
     }
     const cron = cronOf(wf.doc);
@@ -9759,7 +9907,8 @@ ${DOCTOR_HELP}`);
       secretNames = s.names;
       for (const name of required) {
         if (s.names.includes(name)) ok(`secret ${name} is set`);
-        else bad(`secret ${name} is not set: gh secret set ${name}${name === "ANTHROPIC_API_KEY" ? "   (an organization secret works too)" : ""}`);
+        else if (name === AI_SECRET && s.names.includes(FALLBACK_AI_SECRET)) warn(`secret ${FALLBACK_AI_SECRET} is set but deprecated (read as a fallback for this release only): gh secret set ${AI_SECRET}   (your AI API key, Claude today)`);
+        else bad(`secret ${name} is not set: gh secret set ${name}${name === AI_SECRET ? "   (your AI API key, Claude today; an organization secret works too)" : ""}`);
       }
       for (const name of needs.vars) {
         if (vars.names.includes(name)) ok(`variable ${name} is set`);
@@ -9792,6 +9941,8 @@ ${failed} check(s) failed.
 
 // src/init.mjs
 var import_yaml2 = __toESM(require_dist(), 1);
+import { readFileSync as readFileSync2 } from "node:fs";
+import { join as join6 } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { parseArgs as parseArgs3 } from "node:util";
 
@@ -9859,11 +10010,18 @@ function safeWrite(root, rel, text, { overwrite = false } = {}) {
 var INIT_HELP = `Usage: dawnfix init [options]
 
 Sets Dawnfix up in the git repo you are in: shows .dawnfix.yml and
-.github/workflows/dawnfix.yml in full, writes them when you confirm (or with --yes),
-and prints the commands you run next (the read-only cloud role, gh secret set).
-It never asks for a secret and never writes one.
+.github/workflows/dawnfix.yml (GitHub) or .gitlab-ci.yml (GitLab) in full, writes them
+when you confirm (or with --yes), and prints the commands you run next (the read-only
+cloud role, gh secret set or glab variable set). It never asks for a secret and never
+writes one.
+
+GitLab: .gitlab-ci.yml includes the template of this release, pinned with its sha256
+integrity. An existing .gitlab-ci.yml is never changed (not even with --force): init
+writes .dawnfix.yml and prints the include lines to paste.
 
 Options:
+  --host github|gitlab       Where the repo and CI are (default github; gitlab when
+                             origin is a GitLab remote)
   --cloud aws|gcp            Where the logs are (asked if missing; default aws)
   --aws-region REGION        Region of the log groups (default us-east-1)
   --log-group NAME           CloudWatch log group to watch (repeatable)
@@ -9875,8 +10033,8 @@ Options:
   --test-command CMD         The one command the fix agent may run (plan, draft-pr)
   --install-command CMD      Installs dependencies before the fix agent runs (plan, draft-pr)
   --schedule CRON            When the read job runs (default "17 * * * *", hourly)
-  --ref REF                  Ref of dawnfix/dawnfix to call (default ${MAJOR_REF}; a tag or commit SHA)
-  --enterprise               Also send closed-PR events (hosted PR tracking, Enterprise key)
+  --ref REF                  Ref of dawnfix/dawnfix to call (default ${MAJOR_REF}; a tag or commit SHA; GitHub)
+  --enterprise               Also send closed-PR events (hosted PR tracking, Enterprise key; GitHub)
   --dir DIR                  The repo (default: the current directory)
   --yes, -y                  Write without asking
   --dry-run                  Show the files and the next steps; write nothing
@@ -9884,6 +10042,7 @@ Options:
   -h, --help                 This help
 `;
 var OPTIONS = {
+  host: { type: "string" },
   cloud: { type: "string" },
   "aws-region": { type: "string" },
   "log-group": { type: "string", multiple: true },
@@ -9915,7 +10074,7 @@ function renderConfig(a) {
     "# diagnose: an issue per new error | plan: an issue with the planned fix | draft-pr: draft PRs.",
     `autonomy: ${a.autonomy}`,
     "",
-    "# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.",
+    a.host === "gitlab" ? "# Keep it equal to the cron of the GitLab pipeline schedule. Off the hour." : "# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.",
     `schedule: ${q(a.schedule)}`,
     "",
     "sources:"
@@ -9935,7 +10094,7 @@ function renderConfig(a) {
       `  command: ${q(a.testCommand)}`
     );
   }
-  lines.push("", "report:", "  issues: github", "");
+  lines.push("", "report:", `  issues: ${a.host === "gitlab" ? "host" : "github"}`, "");
   return lines.join("\n");
 }
 function renderCaller(a) {
@@ -9958,7 +10117,7 @@ function renderCaller(a) {
     "    with:",
     ...withLines.map((l) => `      ${l}`),
     "    secrets:",
-    "      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}",
+    "      DAWNFIX_AI_API_KEY: ${{ secrets.DAWNFIX_AI_API_KEY }} # your AI API key (Claude today)",
     "      DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }} # optional",
     ""
   ].join("\n");
@@ -9996,7 +10155,7 @@ function nextSteps(a, repo) {
   }
   out.push(
     `${n++}. Secrets (gh asks for the value and does not echo it):`,
-    "   gh secret set ANTHROPIC_API_KEY",
+    "   gh secret set DAWNFIX_AI_API_KEY       # your AI API key (Claude today)",
     "   gh secret set DAWNFIX_ENTERPRISE_KEY   # optional, Enterprise only: turns on hosted reporting",
     `${n++}. Commit both files on a branch, open a pull request and merge it.`,
     `${n++}. gh workflow run dawnfix.yml -f dry_run=true   # prints exactly what would leave your account`,
@@ -10025,7 +10184,14 @@ ${INIT_HELP}`);
   }
   const repo = detectRepo(v.dir || io2.cwd);
   if (!repo) return fail(io2, "not inside a git repository: run it at the root of the repo Dawnfix should watch");
-  if (!repo.slug) io2.stderr("dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n");
+  const host = v.host || (repo.gitlab ? "gitlab" : "github");
+  if (host === "bitbucket") return fail(io2, "Bitbucket support is coming soon. --host takes github or gitlab today");
+  if (!["github", "gitlab"].includes(host)) return fail(io2, `--host must be github or gitlab, not ${q(host)}`);
+  const gitlab = host === "gitlab";
+  if (gitlab && v.ref) return fail(io2, `--ref is for GitHub; on GitLab the include is pinned to ${TAG} with its integrity hash`);
+  if (gitlab && v.enterprise) return fail(io2, "--enterprise (closed-PR events) is for GitHub; on GitLab the Enterprise key alone turns hosted reporting on");
+  if (gitlab && !repo.gitlab) io2.stderr("dawnfix init: no GitLab remote named origin; the next steps say GROUP/PROJECT\n");
+  if (!gitlab && !repo.slug) io2.stderr("dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n");
   const ask = io2.isTTY && !v.yes ? createInterface({ input: io2.stdin, output: io2.stdoutStream }) : null;
   const prompt = async (text, dflt) => {
     if (!ask) return dflt;
@@ -10034,7 +10200,7 @@ ${INIT_HELP}`);
   };
   try {
     const guess = detectCommands(repo.root);
-    const a = { ref: v.ref || MAJOR_REF, enterprise: Boolean(v.enterprise), schedule: v.schedule || "17 * * * *" };
+    const a = { host, ref: v.ref || MAJOR_REF, enterprise: Boolean(v.enterprise), schedule: v.schedule || "17 * * * *" };
     a.cloud = v.cloud || (v["gcp-project"] ? "gcp" : await prompt("Where are the logs: aws or gcp", "aws"));
     if (!["aws", "gcp"].includes(a.cloud)) return fail(io2, `--cloud must be aws or gcp, not ${q(a.cloud)}`);
     a.logGroups = [];
@@ -10064,9 +10230,9 @@ ${INIT_HELP}`);
     const errors = validate(config_schema_default, (0, import_yaml2.parse)(config));
     if (errors.length) return fail(io2, `these settings make an invalid .dawnfix.yml:
 ${errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`);
-    const files = [
+    let files = [
       [".dawnfix.yml", config],
-      [".github/workflows/dawnfix.yml", renderCaller(a)]
+      gitlab ? [".gitlab-ci.yml", renderGitlabCi(a)] : [".github/workflows/dawnfix.yml", renderCaller(a)]
     ];
     let exists;
     try {
@@ -10075,7 +10241,25 @@ ${errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`);
       if (e instanceof UnsafePath) return fail(io2, e.message);
       throw e;
     }
-    io2.stdout(`Dawnfix ${VERSION} in ${repo.slug || repo.root}. ${v["dry-run"] ? "Dry run: nothing is written." : "These files will be written:"}
+    const keepCi = gitlab && exists.includes(".gitlab-ci.yml");
+    let ciNote = "";
+    if (keepCi) {
+      files = files.filter(([p]) => p !== ".gitlab-ci.yml");
+      exists = exists.filter((p) => p !== ".gitlab-ci.yml");
+      const current = readFileSync2(join6(repo.root, ".gitlab-ci.yml"), "utf8");
+      ciNote = hasDawnfix(current) ? `.gitlab-ci.yml exists and already includes the Dawnfix template (or defines its jobs); it is left as it is.
+To move it to ${TAG}, replace that include with these lines:
+
+${includeSnippet()}
+` : `.gitlab-ci.yml exists, so dawnfix does not change it (not even with --force). Paste these lines
+into it (with a top-level include: already there, add the list item under it):
+
+${includeSnippet()}
+Then set the CI/CD variables below. The jobs run only in pipelines with DAWNFIX_RUN=true.
+`;
+    }
+    const steps = () => gitlab ? gitlabNextSteps(a, repo, { wroteCi: !keepCi }) : nextSteps(a, repo);
+    io2.stdout(`Dawnfix ${VERSION} in ${(gitlab ? repo.gitlab?.path : repo.slug) || repo.root}. ${v["dry-run"] ? "Dry run: nothing is written." : "These files will be written:"}
 `);
     for (const [p, text] of files) {
       io2.stdout(`
@@ -10083,8 +10267,10 @@ ${errors.map((e) => `  ${e.path}: ${e.message}`).join("\n")}`);
 ${text}`);
     }
     io2.stdout("---\n\n");
+    if (ciNote) io2.stdout(`${ciNote}
+`);
     if (v["dry-run"]) {
-      io2.stdout(nextSteps(a, repo));
+      io2.stdout(steps());
       return 0;
     }
     if (exists.length && !v.force) return fail(io2, `${exists.join(" and ")} exist already; re-run with --force to replace, or run npx dawnfix doctor`);
@@ -10107,7 +10293,7 @@ ${text}`);
 `);
     }
     io2.stdout(`
-${nextSteps(a, repo)}`);
+${steps()}`);
     return 0;
   } finally {
     ask?.close();
@@ -10115,14 +10301,15 @@ ${nextSteps(a, repo)}`);
 }
 
 // src/cli.mjs
-var HELP2 = `Dawnfix ${VERSION}: the AI SRE that runs in your own GitHub Actions.
+var HELP2 = `Dawnfix ${VERSION}: the AI SRE that runs in your own GitHub Actions or GitLab CI.
 Source available under FSL-1.1-ALv2. https://dawnfix.dev
 
 Usage: npx dawnfix <command> [options]
 
 Commands:
   init        Set Dawnfix up in this repo: .dawnfix.yml and a 15-line workflow that calls
-              dawnfix/dawnfix/.github/workflows/dawnfix.yml. Shows both before writing.
+              dawnfix/dawnfix/.github/workflows/dawnfix.yml (or, with --host gitlab, a
+              .gitlab-ci.yml that includes the pinned template). Shows both before writing.
   doctor      Check the setup: the config, the pinned workflow, secret and variable
               names, Free or Enterprise.
   flare ...   Dawnfix Flare: read-only audit of Cloudflare accounts and Workers

@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  Dawnfix read-only role for GitLab CI. Lets one gitlab.com project's dawnfix-read job (on one
+  branch) read CloudWatch Logs, alarms, metrics and load balancer health through GitLab OIDC
+  (id_tokens). No write actions, no long-lived keys. Self-managed GitLab: see README.md.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "GitLab project allowed to assume the role" }
+        Parameters: [ProjectPath, Branch]
+      - Label: { default: "GitLab OIDC provider (one per AWS account)" }
+        Parameters: [GitLabUrl, CreateOIDCProvider, ExistingOIDCProviderArn]
+      - Label: { default: "Scope" }
+        Parameters: [RoleName, LogGroupPrefix]
+
+Parameters:
+  GitLabUrl:
+    Type: String
+    Default: https://gitlab.com
+    AllowedValues: [https://gitlab.com]
+    Description: >-
+      The OIDC issuer and the token audience (the template's id_tokens aud is $CI_SERVER_URL).
+      Only gitlab.com here: IAM condition keys name the issuer host, so a self-managed GitLab
+      needs its host in the keys (README.md).
+  ProjectPath:
+    Type: String
+    Description: The project's full path, group/subgroup/project (CI_PROJECT_PATH).
+    AllowedPattern: "^[A-Za-z0-9_.][A-Za-z0-9_.-]*(/[A-Za-z0-9_.][A-Za-z0-9_.-]*){1,20}$"
+  Branch:
+    Type: String
+    Default: main
+    Description: The branch whose pipelines may assume the role (the schedule's ref, the default branch). Keep it protected.
+    AllowedPattern: "^[A-Za-z0-9_./-]{1,255}$"
+  CreateOIDCProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: An account holds one provider for gitlab.com. Choose false if it exists and give its ARN below.
+  ExistingOIDCProviderArn:
+    Type: String
+    Default: ""
+    Description: "arn:aws:iam::<account>:oidc-provider/gitlab.com (only when CreateOIDCProvider is false)."
+  RoleName:
+    Type: String
+    Default: dawnfix-read
+    Description: Name of the role. Use a different name per project when one account serves several.
+    AllowedPattern: "^[A-Za-z0-9+=,.@_-]{1,64}$"
+  LogGroupPrefix:
+    Type: String
+    Default: "*"
+    Description: >-
+      Log groups the role may read, as a name pattern ending in * (for example "ecs-*").
+      The default "*" allows every log group in the account.
+    AllowedPattern: "^[A-Za-z0-9_./#-]*\\*$"
+    ConstraintDescription: must be a log group name prefix ending in *
+
+Rules:
+  ExistingProviderGiven:
+    RuleCondition: !Equals [!Ref CreateOIDCProvider, "false"]
+    Assertions:
+      - Assert: !Not [!Equals [!Ref ExistingOIDCProviderArn, ""]]
+        AssertDescription: ExistingOIDCProviderArn is required when CreateOIDCProvider is false.
+
+Conditions:
+  CreateProvider: !Equals [!Ref CreateOIDCProvider, "true"]
+
+Resources:
+  GitLabOIDCProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateProvider
+    Properties:
+      Url: !Ref GitLabUrl
+      ClientIdList: [!Ref GitLabUrl]
+
+  ReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: Dawnfix read-only access to logs, alarms, metrics and ALB health (GitLab OIDC).
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: GitLabOIDCThisProjectAndBranchOnly
+            Effect: Allow
+            Principal:
+              Federated: !If [CreateProvider, !Ref GitLabOIDCProvider, !Ref ExistingOIDCProviderArn]
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                gitlab.com:aud: !Ref GitLabUrl
+                gitlab.com:sub: !Sub "project_path:${ProjectPath}:ref_type:branch:ref:${Branch}"
+      Policies:
+        - PolicyName: dawnfix-read-only
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadLogEventsInScope
+                Effect: Allow
+                Action:
+                  - logs:FilterLogEvents
+                  - logs:GetLogEvents
+                  - logs:StartQuery
+                # Covers both log-group:NAME and log-group:NAME:log-stream:* forms.
+                Resource: !Sub "arn:${AWS::Partition}:logs:*:${AWS::AccountId}:log-group:${LogGroupPrefix}"
+              - Sid: DescribeAndQueryResults
+                Effect: Allow
+                Action:
+                  - logs:Describe*
+                  - logs:StopQuery
+                  - logs:GetQueryResults
+                Resource: "*"
+              - Sid: AlarmsAndMetrics
+                Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                  - cloudwatch:GetMetricData
+                  - cloudwatch:GetMetricStatistics
+                  - cloudwatch:ListMetrics
+                Resource: "*"
+              - Sid: LoadBalancerHealth
+                Effect: Allow
+                Action:
+                  - elasticloadbalancing:DescribeLoadBalancers
+                  - elasticloadbalancing:DescribeTargetGroups
+                  - elasticloadbalancing:DescribeTargetHealth
+                Resource: "*"
+      Tags:
+        - Key: managed-by
+          Value: dawnfix
+
+Outputs:
+  RoleArn:
+    Description: Set it as the CI/CD variable DAWNFIX_AWS_ROLE_ARN.
+    Value: !GetAtt ReadRole.Arn
+  OIDCProviderArn:
+    Description: The GitLab OIDC provider the role trusts.
+    Value: !If [CreateProvider, !Ref GitLabOIDCProvider, !Ref ExistingOIDCProviderArn]

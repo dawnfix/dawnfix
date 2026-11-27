@@ -1,0 +1,184 @@
+# SPDX-License-Identifier: FSL-1.1-ALv2
+# Dawnfix for GitLab CI (https://github.com/dawnfix/dawnfix). Copy this file, or include it at a
+# pinned release tag with its hash (`npx dawnfix init --host gitlab` writes this for you):
+#
+#   include:
+#     - remote: https://raw.githubusercontent.com/dawnfix/dawnfix/v<VERSION>/templates/gitlab/dawnfix.gitlab-ci.yml
+#       integrity: sha256-<base64 SHA-256 of this file>
+#
+# The hash: curl -fsSL <that URL> | openssl dgst -sha256 -binary | openssl base64 -A
+#
+# Four jobs, each a fresh container holding one secret only:
+#   dawnfix-read     the cloud OIDC token (id_tokens:), read-only; writes the findings
+#   dawnfix-agent    the AI key only (environment dawnfix-agent); runs Claude Code. It runs no
+#                    git and holds no repo token: its only output is the changed files and the
+#                    issue bodies, as data
+#   dawnfix-publish  the repo token only (environment dawnfix-publish); a fresh checkout that
+#                    checks every file from scratch (no .git, no CI config, no symlinks,
+#                    submodules or binaries, a credential scan), commits with hooks off, pushes
+#                    and opens a DRAFT merge request or an issue. Never merges.
+#   dawnfix-report   the Enterprise key only (environment dawnfix-report); optional
+#
+# CI/CD variables (Settings > CI/CD > Variables). Secrets are masked, protected, and scoped to
+# ONE environment, so no other job ever holds them:
+#   DAWNFIX_AI_API_KEY      scope dawnfix-agent     your AI API key (Claude today)
+#   DAWNFIX_HOST_TOKEN      scope dawnfix-publish   project access token: Developer, api + write_repository
+#   DAWNFIX_ENTERPRISE_KEY  scope dawnfix-report    optional, Enterprise only
+#   DAWNFIX_AWS_ROLE_ARN + DAWNFIX_AWS_REGION, or DAWNFIX_GCP_WIF_PROVIDER (not secret)
+# Shared runners: supported; Claude Code's sandbox starts (bubblewrap, in the agent job).
+# Recommended: the runner feature flag FF_GIT_URLS_WITHOUT_TOKENS, and the project's job token
+# limited (Settings > CI/CD > Job token permissions). The agent job never clones (GIT_STRATEGY:
+# none) and unsets every CI token before the agent runs.
+# Dawnfix branches are pushed with `-o ci.skip`: no pipeline runs on them by themselves. The
+# merge request's own pipeline runs when a person runs it or pushes to the branch, or when your
+# config defines merge request pipelines (then it runs your unchanged CI files: publish refuses
+# any change to CI config, local includes included).
+# The jobs are in the `test` stage (one of GitLab's default stages; if your file lists its own
+# `stages:`, keep `test` in it) and ordered by `needs:`.
+# The schedule: a pipeline schedule on the default branch with DAWNFIX_RUN=true. The jobs run
+# only when DAWNFIX_RUN is "true", so your other pipelines are untouched.
+
+variables:
+  DAWNFIX_VERSION: "0.4.0"
+  DAWNFIX_PIP_SPEC: ""          # default dawnfix==$DAWNFIX_VERSION (a wheel URL for a test build)
+  DAWNFIX_AUTONOMY: ""          # overrides .dawnfix.yml: diagnose | plan | draft-pr
+  DAWNFIX_AI_MODEL: ""          # default sonnet
+  DAWNFIX_INSTALL_COMMAND: ""   # installs your dependencies before the agent runs (fix modes)
+  DAWNFIX_PASS_ENV: ""          # names of non-secret variables the agent may see (e.g. a toolchain path)
+  DAWNFIX_BASELINE: ""          # "true": record what is failing now, open nothing
+  DAWNFIX_DRY_RUN: ""           # "true": print what would leave your cloud, send nothing
+
+.dawnfix-rules:
+  rules:
+    - if: $DAWNFIX_RUN == "true" && ($CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api")
+
+.dawnfix-python:
+  extends: .dawnfix-rules
+  image: python:3.12-slim-trixie@sha256:191083cdf6c7bda8c76158983163ead5d5cf7b77cf3033e805bb0f5296f51b4b
+
+.dawnfix-install: &dawnfix-install |
+  python3 -m venv /opt/dawnfix
+  /opt/dawnfix/bin/pip install --quiet --disable-pip-version-check "${DAWNFIX_PIP_SPEC:-dawnfix==$DAWNFIX_VERSION}${DAWNFIX_PIP_EXTRA}"
+  export PATH="/opt/dawnfix/bin:$PATH"
+
+dawnfix-read:
+  extends: .dawnfix-python
+  stage: test
+  needs: []
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: $CI_SERVER_URL
+  cache:
+    key: dawnfix-state-$CI_DEFAULT_BRANCH
+    paths: [.dawnfix-state/]
+    policy: pull-push
+  script:
+    - '[ -z "$DAWNFIX_GCP_WIF_PROVIDER" ] || export DAWNFIX_PIP_EXTRA="[gcp]"'
+    - *dawnfix-install
+    - |
+      umask 077
+      mkdir -p /run/dawnfix && printf %s "$GITLAB_OIDC_TOKEN" > /run/dawnfix/oidc-token
+      if [ -n "$DAWNFIX_AWS_ROLE_ARN" ]; then
+        export AWS_ROLE_ARN="$DAWNFIX_AWS_ROLE_ARN" AWS_WEB_IDENTITY_TOKEN_FILE=/run/dawnfix/oidc-token
+        export AWS_ROLE_SESSION_NAME="dawnfix-$CI_PIPELINE_ID" AWS_REGION="${DAWNFIX_AWS_REGION:-us-east-1}"
+      fi
+      if [ -n "$DAWNFIX_GCP_WIF_PROVIDER" ]; then
+        printf '{"type":"external_account","audience":"//iam.googleapis.com/%s","subject_token_type":"urn:ietf:params:oauth:token-type:jwt","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"file":"/run/dawnfix/oidc-token"}}' \
+          "$DAWNFIX_GCP_WIF_PROVIDER" > /run/dawnfix/gcp.json
+        export GOOGLE_APPLICATION_CREDENTIALS=/run/dawnfix/gcp.json
+      fi
+      umask 022
+      set -- --config .dawnfix.yml --state .dawnfix-state/state.json --out .dawnfix-out/read
+      [ "$DAWNFIX_BASELINE" != "true" ] || set -- "$@" --baseline
+      [ "$DAWNFIX_DRY_RUN" != "true" ] || set -- "$@" --dry-run
+      dawnfix run read "$@"
+      # The commit's files for the agent job, without .git (the runner's clone config carries
+      # its credentials): the agent job gets no git metadata and no token from here.
+      mkdir -p .dawnfix-out/source
+      tar -C "$CI_PROJECT_DIR" --exclude=.git --exclude=./.dawnfix-out --exclude=./.dawnfix-state \
+        -cf .dawnfix-out/source/source.tar .
+  artifacts:
+    paths: [.dawnfix-out/read/, .dawnfix-out/source/]
+    expire_in: 3 days
+
+dawnfix-agent:
+  extends: .dawnfix-rules
+  image: node:22-trixie-slim@sha256:f0960f8dc047f358e3fb428f36ccba21732194fa5f0cac849f401e63e62fb9e6
+  stage: test
+  needs: [dawnfix-read]
+  environment: { name: dawnfix-agent, action: prepare }
+  variables:
+    # No clone: the runner's clone carries CI_JOB_TOKEN in .git/config. The code comes as the
+    # read job's tokenless archive, unpacked where no .git exists.
+    GIT_STRATEGY: none
+    DAWNFIX_WORKDIR: /dawnfix/work
+  script:
+    - |
+      has_new=$(sed -n 's/^has_new=//p' .dawnfix-out/read/outputs.env 2>/dev/null)
+      if [ "$has_new" != "true" ]; then echo "dawnfix: nothing new; the agent does not run"; exit 0; fi
+      autonomy=$(sed -n 's/^autonomy=//p' .dawnfix-out/read/outputs.env)
+      mode=fix; [ "$autonomy" != "diagnose" ] || mode=diagnose
+      export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-venv bubblewrap socat >/dev/null
+      mkdir -p "$DAWNFIX_WORKDIR" && tar -xf .dawnfix-out/source/source.tar -C "$DAWNFIX_WORKDIR" --no-same-owner
+      # No CI credential reaches the agent: every CI token, password and credentialed URL goes
+      # before anything else runs (dawnfix run agent --isolation job refuses to start otherwise).
+      for v in $(env | sed -n 's/^\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | grep -E '^CI_[A-Za-z0-9_]*(TOKEN|PASSWORD|JWT)|PASSWORD|^CI_REPOSITORY_URL$|^GIT_ASKPASS$|^SSH_ASKPASS$|^GIT_CONFIG_'); do unset "$v"; done
+    - *dawnfix-install
+    - |
+      if [ -n "$DAWNFIX_INSTALL_COMMAND" ] && [ "$mode" = fix ]; then (cd "$DAWNFIX_WORKDIR" && sh -c "$DAWNFIX_INSTALL_COMMAND"); fi
+      # --isolation job: this job is the agent's isolation. It runs no git command and holds no
+      # repo token; the changed files go to the publish job as data.
+      set --
+      for n in $DAWNFIX_PASS_ENV; do set -- "$@" --pass-env "$n"; done
+      dawnfix run agent --mode "$mode" --isolation job --dir "$DAWNFIX_WORKDIR" \
+        --findings "$CI_PROJECT_DIR/.dawnfix-out/read/findings.json" --out /tmp/dawnfix-agent "$@"
+      rm -rf .dawnfix-out/agent && cp -R /tmp/dawnfix-agent .dawnfix-out/agent
+  artifacts:
+    paths: [.dawnfix-out/agent/]
+    expire_in: 3 days
+
+dawnfix-publish:
+  extends: .dawnfix-python
+  stage: test
+  needs: [dawnfix-read, dawnfix-agent]
+  environment: { name: dawnfix-publish, action: prepare }
+  variables:
+    # The runner's own clone carries its credential settings (include.path, credential.*),
+    # which publish refuses to push from. The job fetches the pipeline's commit itself into
+    # a clean repository instead, read with the job's own CI_JOB_TOKEN.
+    GIT_STRATEGY: none
+  script:
+    - |
+      mkdir -p .dawnfix-out/publish
+      if [ ! -f .dawnfix-out/agent/meta.json ]; then echo "dawnfix: nothing to publish"; exit 0; fi
+      export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends git ca-certificates >/dev/null
+      # A fresh checkout of the pipeline's commit; the artifact's files are checked from scratch.
+      git init -q /tmp/dawnfix-checkout
+      git -C /tmp/dawnfix-checkout -c credential.helper= fetch -q --no-tags "$CI_REPOSITORY_URL" "$CI_COMMIT_SHA"
+      git -C /tmp/dawnfix-checkout -c core.hooksPath=/dev/null checkout -q --detach "$CI_COMMIT_SHA"
+    - *dawnfix-install
+    - |
+      # The branch is pushed with -o ci.skip: no pipeline runs on it by itself.
+      dawnfix run publish --isolation job --dir /tmp/dawnfix-checkout --artifact .dawnfix-out/agent \
+        --findings .dawnfix-out/read/findings.json --out .dawnfix-out/publish
+  artifacts:
+    paths: [.dawnfix-out/publish/]
+    expire_in: 3 days
+    when: always
+
+dawnfix-report:
+  extends: .dawnfix-python
+  stage: test
+  needs:
+    - dawnfix-read
+    - { job: dawnfix-publish, optional: true }
+  environment: { name: dawnfix-report, action: prepare }
+  allow_failure: true
+  script:
+    # Without DAWNFIX_ENTERPRISE_KEY the report stage prints one line and sends nothing.
+    - *dawnfix-install
+    - |
+      set --
+      [ ! -f .dawnfix-out/read/ingest.json ] || set -- "$@" --ingest .dawnfix-out/read/ingest.json
+      [ ! -f .dawnfix-out/publish/opened.json ] || set -- "$@" --opened .dawnfix-out/publish/opened.json
+      dawnfix run report "$@"

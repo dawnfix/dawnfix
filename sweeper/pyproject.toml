@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix-sweeper"
-version = "0.3.1"
+version = "0.4.0"
 description = "Read-only post-cutover sweep: find what the old AWS stack left behind and write a teardown plan. Never deletes."
 readme = "README.md"
 requires-python = ">=3.11"

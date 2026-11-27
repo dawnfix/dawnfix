@@ -44,7 +44,8 @@ test('init --dry-run shows both files and the next steps, writes nothing', () =>
   assert.equal(r.code, 0, r.err);
   assert.match(r.out, /--- \.dawnfix\.yml/);
   assert.match(r.out, /--- \.github\/workflows\/dawnfix\.yml/);
-  assert.match(r.out, /gh secret set ANTHROPIC_API_KEY\n/);
+  assert.match(r.out, /gh secret set DAWNFIX_AI_API_KEY {7}# your AI API key \(Claude today\)\n/);
+  assert.doesNotMatch(r.out, /ANTHROPIC|Anthropic/);
   assert.match(r.out, /aws cloudformation deploy --template-file dawnfix-read-role\.yaml/);
   assert.match(r.out, new RegExp(`raw\\.githubusercontent\\.com/dawnfix/dawnfix/v${VERSION.replace(/\./g, '\\.')}/infra/aws/dawnfix-read-role\\.yaml`));
   assert.match(r.out, /GitHubOrg=octo GitHubRepo=shop-api Branch=main/);
@@ -75,7 +76,7 @@ test('init --yes writes a valid config and a short pinned caller; no secret anyw
   assert.equal(wf.jobs.dawnfix.with['aws-role-arn'], 'arn:aws:iam::123456789012:role/dawnfix-read-shop-api');
   assert.equal(wf.jobs.dawnfix.with['install-command'], 'go mod download');
   assert.deepEqual(wf.permissions, { contents: 'write', 'pull-requests': 'write', issues: 'write', 'id-token': 'write' });
-  assert.deepEqual(Object.keys(wf.jobs.dawnfix.secrets), ['ANTHROPIC_API_KEY', 'DAWNFIX_ENTERPRISE_KEY']);
+  assert.deepEqual(Object.keys(wf.jobs.dawnfix.secrets), ['DAWNFIX_AI_API_KEY', 'DAWNFIX_ENTERPRISE_KEY']);
   assert.match(r.out, /wrote \.dawnfix\.yml\nwrote \.github\/workflows\/dawnfix\.yml/);
   assert.doesNotMatch(r.out, /gh variable set DAWNFIX_AWS_ROLE_ARN/, 'the role was given');
   // The files exist now: a second run refuses unless --force.
@@ -123,19 +124,30 @@ test('the caller init writes passes actionlint against the reusable workflow', {
 test('doctor: a good setup with gh, Free then Enterprise', () => {
   const dir = repo();
   run(['init', '--yes', '--log-group', 'a'], { cwd: dir });
-  let gh = fakeGh({ secrets: ['ANTHROPIC_API_KEY'], vars: ['DAWNFIX_AWS_ROLE_ARN'] });
+  let gh = fakeGh({ secrets: ['DAWNFIX_AI_API_KEY'], vars: ['DAWNFIX_AWS_ROLE_ARN'] });
   let r = run(['doctor'], { cwd: dir, path: gh });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /ok {4}\.dawnfix\.yml is valid/);
   assert.match(r.out, /calls dawnfix\/dawnfix@v0/);
-  assert.match(r.out, /secret ANTHROPIC_API_KEY is set/);
+  assert.match(r.out, /secret DAWNFIX_AI_API_KEY is set/);
   assert.match(r.out, /variable DAWNFIX_AWS_ROLE_ARN is set/);
   assert.match(r.out, /plan: Free & source available/);
   assert.match(readFileSync(join(gh, 'gh.log'), 'utf8'), /secret list -R octo\/shop-api --json name/);
-  gh = fakeGh({ secrets: ['ANTHROPIC_API_KEY', 'DAWNFIX_ENTERPRISE_KEY'], vars: ['DAWNFIX_AWS_ROLE_ARN'] });
+  gh = fakeGh({ secrets: ['DAWNFIX_AI_API_KEY', 'DAWNFIX_ENTERPRISE_KEY'], vars: ['DAWNFIX_AWS_ROLE_ARN'] });
   r = run(['doctor'], { cwd: dir, path: gh });
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /plan: Enterprise/);
+});
+
+test('doctor: the old AI secret name still works for one release, with a deprecation warning', () => {
+  const dir = repo();
+  run(['init', '--yes', '--log-group', 'a'], { cwd: dir });
+  const wf = join(dir, '.github/workflows/dawnfix.yml');
+  writeFileSync(wf, readFileSync(wf, 'utf8').replace(/DAWNFIX_AI_API_KEY: \$\{\{ secrets\.DAWNFIX_AI_API_KEY \}\}/, 'ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}'));
+  const r = run(['doctor'], { cwd: dir, path: fakeGh({ secrets: ['ANTHROPIC_API_KEY'], vars: ['DAWNFIX_AWS_ROLE_ARN'] }) }); // the deprecated fallback name only
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /passes the deprecated ANTHROPIC_API_KEY/);
+  assert.match(r.out, /secret ANTHROPIC_API_KEY is set but deprecated/);
 });
 
 test('doctor: missing names, an unpinned workflow and a bad config fail', () => {
@@ -151,7 +163,7 @@ test('doctor: missing names, an unpinned workflow and a bad config fail', () => 
   assert.match(r.out, /\/sources\/0\/aws/);
   assert.match(r.out, /dawnfix\.yml@main: not pinned to a release/);
   assert.match(r.out, /must grant id-token: write/);
-  assert.match(r.out, /secret ANTHROPIC_API_KEY is not set: gh secret set ANTHROPIC_API_KEY/);
+  assert.match(r.out, /secret DAWNFIX_AI_API_KEY is not set: gh secret set DAWNFIX_AI_API_KEY {3}\(your AI API key, Claude today/);
   assert.match(r.out, /variable DAWNFIX_AWS_ROLE_ARN is not set/);
 });
 
@@ -163,7 +175,7 @@ test('doctor without gh lists the names to check, and knows the template form', 
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, new RegExp(`copy-it-yourself template of v${VERSION.replace(/\./g, '\\.')}`));
   assert.match(r.out, /could not list the repo's secrets with gh \(gh: not logged in\)/);
-  assert.match(r.out, /secret ANTHROPIC_API_KEY\n/);
+  assert.match(r.out, /secret DAWNFIX_AI_API_KEY\n/);
   assert.match(r.out, /variable DAWNFIX_AWS_ROLE_ARN\n/);
   const none = run(['doctor'], { cwd: repo() , path: fakeGh() });
   assert.equal(none.code, 1);

@@ -1,10 +1,14 @@
-// npx dawnfix init: writes .dawnfix.yml and a short caller of the reusable workflow, after
-// showing both in full. Never asks for, reads or writes a secret: it prints the `gh secret set`
-// lines for the user to run.
+// npx dawnfix init: writes .dawnfix.yml and a short caller of the reusable workflow (GitHub),
+// or a .gitlab-ci.yml that includes the release's template (GitLab), after showing both in
+// full. Never asks for, reads or writes a secret: it prints the `gh secret set` (or
+// `glab variable set`) lines for the user to run.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { parseArgs } from 'node:util';
 import { parse as parseYaml } from 'yaml';
 import CONFIG_SCHEMA from '../../core/schema/config.schema.json';
+import { gitlabNextSteps, hasDawnfix, includeSnippet, renderGitlabCi } from './gitlab.mjs';
 import { detectCommands, detectRepo } from './repo.mjs';
 import { checkTarget, safeWrite, UnsafePath } from './safe-write.mjs';
 import { validate } from './schema.mjs';
@@ -13,11 +17,18 @@ import { MAJOR_REF, RAW, REPO_URL, TAG, VERSION } from './version.mjs';
 export const INIT_HELP = `Usage: dawnfix init [options]
 
 Sets Dawnfix up in the git repo you are in: shows .dawnfix.yml and
-.github/workflows/dawnfix.yml in full, writes them when you confirm (or with --yes),
-and prints the commands you run next (the read-only cloud role, gh secret set).
-It never asks for a secret and never writes one.
+.github/workflows/dawnfix.yml (GitHub) or .gitlab-ci.yml (GitLab) in full, writes them
+when you confirm (or with --yes), and prints the commands you run next (the read-only
+cloud role, gh secret set or glab variable set). It never asks for a secret and never
+writes one.
+
+GitLab: .gitlab-ci.yml includes the template of this release, pinned with its sha256
+integrity. An existing .gitlab-ci.yml is never changed (not even with --force): init
+writes .dawnfix.yml and prints the include lines to paste.
 
 Options:
+  --host github|gitlab       Where the repo and CI are (default github; gitlab when
+                             origin is a GitLab remote)
   --cloud aws|gcp            Where the logs are (asked if missing; default aws)
   --aws-region REGION        Region of the log groups (default us-east-1)
   --log-group NAME           CloudWatch log group to watch (repeatable)
@@ -29,8 +40,8 @@ Options:
   --test-command CMD         The one command the fix agent may run (plan, draft-pr)
   --install-command CMD      Installs dependencies before the fix agent runs (plan, draft-pr)
   --schedule CRON            When the read job runs (default "17 * * * *", hourly)
-  --ref REF                  Ref of dawnfix/dawnfix to call (default ${MAJOR_REF}; a tag or commit SHA)
-  --enterprise               Also send closed-PR events (hosted PR tracking, Enterprise key)
+  --ref REF                  Ref of dawnfix/dawnfix to call (default ${MAJOR_REF}; a tag or commit SHA; GitHub)
+  --enterprise               Also send closed-PR events (hosted PR tracking, Enterprise key; GitHub)
   --dir DIR                  The repo (default: the current directory)
   --yes, -y                  Write without asking
   --dry-run                  Show the files and the next steps; write nothing
@@ -39,6 +50,7 @@ Options:
 `;
 
 const OPTIONS = {
+  host: { type: 'string' },
   cloud: { type: 'string' },
   'aws-region': { type: 'string' },
   'log-group': { type: 'string', multiple: true },
@@ -72,7 +84,9 @@ export function renderConfig(a) {
     '# diagnose: an issue per new error | plan: an issue with the planned fix | draft-pr: draft PRs.',
     `autonomy: ${a.autonomy}`,
     '',
-    '# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.',
+    a.host === 'gitlab'
+      ? '# Keep it equal to the cron of the GitLab pipeline schedule. Off the hour.'
+      : '# Keep it equal to the cron in .github/workflows/dawnfix.yml. Off the hour.',
     `schedule: ${q(a.schedule)}`,
     '',
     'sources:',
@@ -88,7 +102,7 @@ export function renderConfig(a) {
     lines.push('', '# The one command the fix agent may run (its only shell permission). Plain words only.',
       'test:', `  command: ${q(a.testCommand)}`);
   }
-  lines.push('', 'report:', '  issues: github', '');
+  lines.push('', 'report:', `  issues: ${a.host === 'gitlab' ? 'host' : 'github'}`, '');
   return lines.join('\n');
 }
 
@@ -112,7 +126,7 @@ export function renderCaller(a) {
     '    with:',
     ...withLines.map((l) => `      ${l}`),
     '    secrets:',
-    '      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}',
+    '      DAWNFIX_AI_API_KEY: ${{ secrets.DAWNFIX_AI_API_KEY }} # your AI API key (Claude today)',
     '      DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }} # optional',
     '',
   ].join('\n');
@@ -144,7 +158,7 @@ export function nextSteps(a, repo) {
     if (!a.gcpWifProvider) out.push('   gh variable set DAWNFIX_GCP_WIF_PROVIDER --body "<the provider name setup-wif.sh prints>"');
   }
   out.push(`${n++}. Secrets (gh asks for the value and does not echo it):`,
-    '   gh secret set ANTHROPIC_API_KEY',
+    '   gh secret set DAWNFIX_AI_API_KEY       # your AI API key (Claude today)',
     '   gh secret set DAWNFIX_ENTERPRISE_KEY   # optional, Enterprise only: turns on hosted reporting',
     `${n++}. Commit both files on a branch, open a pull request and merge it.`,
     `${n++}. gh workflow run dawnfix.yml -f dry_run=true   # prints exactly what would leave your account`,
@@ -171,7 +185,14 @@ export async function init(argv, io) {
   }
   const repo = detectRepo(v.dir || io.cwd);
   if (!repo) return fail(io, 'not inside a git repository: run it at the root of the repo Dawnfix should watch');
-  if (!repo.slug) io.stderr('dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n');
+  const host = v.host || (repo.gitlab ? 'gitlab' : 'github');
+  if (host === 'bitbucket') return fail(io, 'Bitbucket support is coming soon. --host takes github or gitlab today');
+  if (!['github', 'gitlab'].includes(host)) return fail(io, `--host must be github or gitlab, not ${q(host)}`);
+  const gitlab = host === 'gitlab';
+  if (gitlab && v.ref) return fail(io, `--ref is for GitHub; on GitLab the include is pinned to ${TAG} with its integrity hash`);
+  if (gitlab && v.enterprise) return fail(io, '--enterprise (closed-PR events) is for GitHub; on GitLab the Enterprise key alone turns hosted reporting on');
+  if (gitlab && !repo.gitlab) io.stderr('dawnfix init: no GitLab remote named origin; the next steps say GROUP/PROJECT\n');
+  if (!gitlab && !repo.slug) io.stderr('dawnfix init: no GitHub remote named origin; the next steps say OWNER/REPO\n');
 
   const ask = io.isTTY && !v.yes ? createInterface({ input: io.stdin, output: io.stdoutStream }) : null;
   const prompt = async (text, dflt) => {
@@ -181,7 +202,7 @@ export async function init(argv, io) {
   };
   try {
     const guess = detectCommands(repo.root);
-    const a = { ref: v.ref || MAJOR_REF, enterprise: Boolean(v.enterprise), schedule: v.schedule || '17 * * * *' };
+    const a = { host, ref: v.ref || MAJOR_REF, enterprise: Boolean(v.enterprise), schedule: v.schedule || '17 * * * *' };
     a.cloud = v.cloud || (v['gcp-project'] ? 'gcp' : await prompt('Where are the logs: aws or gcp', 'aws'));
     if (!['aws', 'gcp'].includes(a.cloud)) return fail(io, `--cloud must be aws or gcp, not ${q(a.cloud)}`);
     a.logGroups = [];
@@ -212,9 +233,9 @@ export async function init(argv, io) {
     const config = renderConfig(a);
     const errors = validate(CONFIG_SCHEMA, parseYaml(config));
     if (errors.length) return fail(io, `these settings make an invalid .dawnfix.yml:\n${errors.map((e) => `  ${e.path}: ${e.message}`).join('\n')}`);
-    const files = [
+    let files = [
       ['.dawnfix.yml', config],
-      ['.github/workflows/dawnfix.yml', renderCaller(a)],
+      gitlab ? ['.gitlab-ci.yml', renderGitlabCi(a)] : ['.github/workflows/dawnfix.yml', renderCaller(a)],
     ];
     let exists;
     try {
@@ -223,14 +244,31 @@ export async function init(argv, io) {
       if (e instanceof UnsafePath) return fail(io, e.message);
       throw e;
     }
+    // An existing .gitlab-ci.yml is the user's pipeline: never touched, not even with --force.
+    const keepCi = gitlab && exists.includes('.gitlab-ci.yml');
+    let ciNote = '';
+    if (keepCi) {
+      files = files.filter(([p]) => p !== '.gitlab-ci.yml');
+      exists = exists.filter((p) => p !== '.gitlab-ci.yml');
+      const current = readFileSync(join(repo.root, '.gitlab-ci.yml'), 'utf8');
+      ciNote = hasDawnfix(current)
+        ? '.gitlab-ci.yml exists and already includes the Dawnfix template (or defines its jobs); it is left as it is.\n'
+          + `To move it to ${TAG}, replace that include with these lines:\n\n${includeSnippet()}\n`
+        : '.gitlab-ci.yml exists, so dawnfix does not change it (not even with --force). Paste these lines\n'
+          + 'into it (with a top-level include: already there, add the list item under it):\n\n'
+          + `${includeSnippet()}\n`
+          + 'Then set the CI/CD variables below. The jobs run only in pipelines with DAWNFIX_RUN=true.\n';
+    }
+    const steps = () => (gitlab ? gitlabNextSteps(a, repo, { wroteCi: !keepCi }) : nextSteps(a, repo));
 
-    io.stdout(`Dawnfix ${VERSION} in ${repo.slug || repo.root}. ${v['dry-run'] ? 'Dry run: nothing is written.' : 'These files will be written:'}\n`);
+    io.stdout(`Dawnfix ${VERSION} in ${(gitlab ? repo.gitlab?.path : repo.slug) || repo.root}. ${v['dry-run'] ? 'Dry run: nothing is written.' : 'These files will be written:'}\n`);
     for (const [p, text] of files) {
       io.stdout(`\n--- ${p}${exists.includes(p) ? ' (exists; replaced only with --force)' : ''}\n${text}`);
     }
     io.stdout('---\n\n');
+    if (ciNote) io.stdout(`${ciNote}\n`);
     if (v['dry-run']) {
-      io.stdout(nextSteps(a, repo));
+      io.stdout(steps());
       return 0;
     }
     if (exists.length && !v.force) return fail(io, `${exists.join(' and ')} exist already; re-run with --force to replace, or run npx dawnfix doctor`);
@@ -251,7 +289,7 @@ export async function init(argv, io) {
       }
       io.stdout(`wrote ${p}\n`);
     }
-    io.stdout(`\n${nextSteps(a, repo)}`);
+    io.stdout(`\n${steps()}`);
     return 0;
   } finally {
     ask?.close();

@@ -42,3 +42,10 @@ export function run(args, { cwd, path, input } = {}) {
   const p = spawnSync(process.execPath, [BIN, ...args], { cwd, env, encoding: 'utf8', input: input ?? '' });
   return { code: p.status, out: p.stdout, err: p.stderr };
 }
+
+/** A fresh git repo whose origin is a GitLab project (group/subgroup/project). */
+export function gitlabRepo(files = {}, remote = 'git@gitlab.com:acme/platform/shop-api.git') {
+  const dir = repo(files);
+  execFileSync('git', ['remote', 'set-url', 'origin', remote], { cwd: dir });
+  return dir;
+}

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dawnfix-parity"
-version = "0.3.1"
+version = "0.4.0"
 description = "Read-only config parity and secret inventory for config kept in AWS (SSM, Secrets Manager, ECS, Lambda)."
 readme = "README.md"
 requires-python = ">=3.11"

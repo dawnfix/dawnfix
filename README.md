@@ -3,9 +3,11 @@
 An AI SRE (AI Site Reliability Engineer) for AWS and GCP that runs in your own GitHub
 Actions. A deterministic, read-only job reads CloudWatch Logs, alarms, load balancer 5xx or
 Cloud Logging every hour, fingerprints and redacts the errors, and remembers which ones it
-has seen. When one is new, an agent runs with your own Anthropic key. It either files a
+has seen. When one is new, an agent runs with your own AI API key (Claude today). It either files a
 GitHub issue with the cause, the impact and a severity, or writes a failing test and the fix
 and opens a draft PR for you to review. It never merges or deploys. Your logs never leave your accounts.
+
+On GitLab, it runs as four jobs in your project's pipeline ([GitLab CI](#gitlab-ci)).
 
 Free and source available. No key and no plan is needed for anything in this repo.
 
@@ -37,7 +39,7 @@ jobs:
     with:
       aws-role-arn: ${{ vars.DAWNFIX_AWS_ROLE_ARN }}
     secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      DAWNFIX_AI_API_KEY: ${{ secrets.DAWNFIX_AI_API_KEY }} # your AI API key (Claude today)
       DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }} # optional
 ```
 
@@ -48,13 +50,19 @@ It never asks for a secret and never writes one. It prints what you run next:
    `infra/aws/verify_readonly.py`). GCP: `infra/gcp/setup-wif.sh` (Workload Identity
    Federation, `roles/logging.viewer` only).
 2. **Repo settings**, typed by you: the role as the variable `DAWNFIX_AWS_ROLE_ARN` (or
-   `DAWNFIX_GCP_WIF_PROVIDER`), and `gh secret set ANTHROPIC_API_KEY`.
+   `DAWNFIX_GCP_WIF_PROVIDER`), and `gh secret set DAWNFIX_AI_API_KEY` (your AI API key,
+   Claude today). The model is the `model` input (your `DAWNFIX_AI_MODEL` variable);
+   the default is `sonnet`.
 3. **Review and run.** Open a PR with the two files and merge it. Then
    `gh workflow run dawnfix.yml -f dry_run=true` shows exactly what would leave your account,
    and `gh workflow run dawnfix.yml -f baseline=true` records the errors you already have, so
    only new ones are reported.
 4. `npx dawnfix doctor` checks the config, the pinned workflow, the secret and variable
    names, and says whether you run Free or Enterprise.
+
+Renamed in v0.4.0: the secret `ANTHROPIC_API_KEY` is now `DAWNFIX_AI_API_KEY`, and the
+template's variable `DAWNFIX_MODEL` is now `DAWNFIX_AI_MODEL`. The old names still work as a
+deprecated fallback for this release, with one notice in the run log.
 
 Later, switch `autonomy` to `plan` or `draft-pr` through a PR (and give `install-command`).
 For draft PRs that trigger your CI, set a GitHub App (`pr-app-id`,
@@ -91,12 +99,84 @@ dawnfix validate --config .dawnfix.yml
 npx dawnfix flare --help      # npm: the Cloudflare audit (also node flare/dist/cli.js)
 ```
 
+## GitLab CI
+
+On GitLab, Dawnfix runs as four jobs in your project's pipeline. Each job is a fresh container
+that holds one secret:
+
+- `dawnfix-read`: the cloud OIDC token only (`id_tokens:`). Reads your logs.
+- `dawnfix-agent`: `DAWNFIX_AI_API_KEY` only. It runs no git and has no repo token. Its only
+  output is an artifact with the changed files and the issue texts.
+- `dawnfix-publish`: `DAWNFIX_HOST_TOKEN` only. It checks the files again in a fresh checkout,
+  then opens a draft merge request or an issue. It never merges.
+- `dawnfix-report`: `DAWNFIX_ENTERPRISE_KEY` only, optional.
+
+Shared runners on gitlab.com work. The agent's sandbox starts there, and the agent job is also
+isolated by being its own job.
+
+Hardening:
+
+- The agent job never clones (`GIT_STRATEGY: none`): it gets a copy of the commit without
+  `.git`, and the CI job token and every CI password are unset before the agent runs.
+- Turn on the runner feature flag `FF_GIT_URLS_WITHOUT_TOKENS`, and limit the project's job
+  token (Settings > CI/CD > Job token permissions).
+- Dawnfix branches are pushed with `-o ci.skip`, so no pipeline runs on them by itself. The
+  merge request's pipeline runs when a person runs it or pushes to the branch, or when your
+  config has merge request pipelines. Dawnfix never changes CI config, including files your
+  `.gitlab-ci.yml` includes with `include: local`.
+
+1. **Init.** `npx dawnfix init --host gitlab` writes `.dawnfix.yml` and shows the include for
+   your `.gitlab-ci.yml`. It never asks for a secret.
+2. **Include the template** at the release tag. GitLab checks it against the hash before it
+   runs it (the template's header says how to get the hash):
+
+   ```yaml
+   include:
+     - remote: https://raw.githubusercontent.com/dawnfix/dawnfix/v<version>/templates/gitlab/dawnfix.gitlab-ci.yml
+       integrity: sha256-…
+   ```
+
+3. **Read-only cloud role.** AWS: `infra/aws/dawnfix-read-role-gitlab.yaml` with
+   CloudFormation (it trusts GitLab OIDC for your project's default branch only). GCP:
+   `infra/gcp/setup-wif-gitlab.sh`, which prints the value for `DAWNFIX_GCP_WIF_PROVIDER`.
+4. **CI/CD variables.** Each secret is masked, protected and scoped to one environment:
+
+   | Variable | Environment scope | What |
+   |---|---|---|
+   | `DAWNFIX_AI_API_KEY` | `dawnfix-agent` | your AI API key (Claude today) |
+   | `DAWNFIX_HOST_TOKEN` | `dawnfix-publish` | a project access token: role Developer, scopes `api` and `write_repository` |
+   | `DAWNFIX_ENTERPRISE_KEY` | `dawnfix-report` | optional, Enterprise only |
+
+   Not secret: `DAWNFIX_AWS_ROLE_ARN` and `DAWNFIX_AWS_REGION`, or `DAWNFIX_GCP_WIF_PROVIDER`.
+   `glab` reads each secret from stdin, so it stays out of your shell history:
+
+   ```sh
+   glab variable set DAWNFIX_AI_API_KEY --masked --protected --scope dawnfix-agent
+   glab variable set DAWNFIX_HOST_TOKEN --masked --protected --scope dawnfix-publish
+   glab variable set DAWNFIX_ENTERPRISE_KEY --masked --protected --scope dawnfix-report   # optional
+   glab variable set DAWNFIX_AWS_ROLE_ARN --value "<role arn>"
+   ```
+
+5. **Schedule.** The jobs run only when `DAWNFIX_RUN` is `true`, so your other pipelines are
+   untouched:
+
+   New projects block pipeline variables, and the schedule needs `DAWNFIX_RUN`: allow them
+   for maintainers (Settings > CI/CD > Variables > Minimum role to use pipeline variables).
+
+   ```sh
+   glab api --method PUT "projects/:fullpath" --field ci_pipeline_variables_minimum_override_role=maintainer
+   glab schedule create --cron "17 * * * *" --ref main --description dawnfix --variable "DAWNFIX_RUN:true"
+   ```
+
+   To run it by hand: Build > Pipelines > Run pipeline with `DAWNFIX_RUN=true`, plus
+   `DAWNFIX_DRY_RUN=true` or `DAWNFIX_BASELINE=true`.
+
 ## What it costs you
 
 Dawnfix itself is free, with no key. It runs on accounts you already pay for, and those
 bills go to you, not to us:
 
-- **Anthropic tokens**, on your own `ANTHROPIC_API_KEY`. Only the diagnose or fix job uses
+- **Claude tokens**, on your own AI API key (`DAWNFIX_AI_API_KEY`). Only the diagnose or fix job uses
   them, and only on a run that found a new error. A quiet hour spends no tokens.
   `limits.fix_prs_per_day` and the agent's `max_turns` cap a busy day.
 - **GitHub Actions minutes.** The read job runs every hour, about a minute each, so about

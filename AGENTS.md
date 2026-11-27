@@ -22,11 +22,11 @@ Follow `prompts/setup.md`. In short:
 - Cloud access is read-only. Check an AWS role with `infra/aws/verify_readonly.py`; if it
   fails, stop. Never widen a policy to make it pass.
 - Never ask for a secret in the chat and never print one. The user runs
-  `gh secret set ANTHROPIC_API_KEY` themselves.
+  `gh secret set DAWNFIX_AI_API_KEY` (their AI API key, Claude today) themselves.
 - Start with `autonomy: diagnose`. Install the Python CLIs with `pipx install dawnfix` (PyPI).
   Check the config with `dawnfix validate --config .dawnfix.yml`
   and try it with `dawnfix tick --config .dawnfix.yml --state "$(mktemp -d)/state.json" --baseline --dry-run`.
-- Tell the user what it costs them: their Anthropic tokens, GitHub Actions minutes, small
+- Tell the user what it costs them: their Claude tokens (on their own AI API key), GitHub Actions minutes, small
   CloudWatch API charges; Cost Explorer at $0.01 a request if they use Receipt.
 
 ## Running a tool

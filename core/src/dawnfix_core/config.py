@@ -9,7 +9,9 @@ import yaml
 from .rules import Rule, RuleError, parse_rule
 
 AUTONOMY = ("diagnose", "plan", "draft-pr")
-ISSUE_TRACKERS = ("github", "linear", "jira", "none")
+ISSUE_TRACKERS = ("github", "host", "linear", "jira", "none")
+# github and host both mean the repo host's own issues (GitHub, GitLab); host is the neutral name.
+HOST_ISSUES = ("github", "host")
 ROLE_ARN = re.compile(r"^arn:aws[a-z-]*:iam::\d{1,12}:role/[\w+=,.@/-]+$")
 REGION = re.compile(r"^[a-z]{2}(-[a-z]+)+-\d$")
 GCP_PROJECT = re.compile(r"^[a-z][a-z0-9-]{4,28}[a-z0-9]$")

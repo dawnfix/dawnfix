@@ -17,13 +17,31 @@ export function slugFromRemote(url) {
   return m ? `${m[1]}/${m[2]}` : '';
 }
 
+/**
+ * { host, path } of a GitLab remote URL (gitlab.com, or a self-managed host whose name contains
+ * "gitlab"), with the full project path (group/subgroup/project); null for anything else.
+ */
+export function gitlabFromRemote(url) {
+  const u = String(url || '').trim();
+  // scheme://[user@]host[:port]/path  or  [user@]host:path (scp-like ssh)
+  const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]+@)?([^/:]+)(?::\d+)?\/(.+)$/i.exec(u) || /^(?:[^@/]+@)?([^/:]+):(?!\/\/)(.+)$/.exec(u);
+  if (!m) return null;
+  const host = m[1].toLowerCase();
+  if (host !== 'gitlab.com' && !host.includes('gitlab')) return null;
+  const path = m[2].replace(/\/+$/, '').replace(/\.git$/, '').replace(/^\/+/, '');
+  if (!/^[A-Za-z0-9_.][A-Za-z0-9_.-]*(\/[A-Za-z0-9_.][A-Za-z0-9_.-]*)+$/.test(path)) return null;
+  return { host, path };
+}
+
 export function detectRepo(cwd) {
   const root = git(cwd, 'rev-parse', '--show-toplevel');
   if (!root) return null;
-  const slug = slugFromRemote(git(root, 'remote', 'get-url', 'origin'));
+  const origin = git(root, 'remote', 'get-url', 'origin');
+  const slug = slugFromRemote(origin);
+  const gitlab = slug ? null : gitlabFromRemote(origin);
   const head = git(root, 'symbolic-ref', '--short', 'refs/remotes/origin/HEAD').replace(/^origin\//, '');
   const branch = head || git(root, 'symbolic-ref', '--short', 'HEAD') || 'main';
-  return { root, slug, branch };
+  return { root, slug, gitlab, branch };
 }
 
 /** Best guesses for test.command and the install command, from the files at the repo root. */

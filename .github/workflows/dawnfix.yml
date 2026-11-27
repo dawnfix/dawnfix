@@ -22,7 +22,7 @@
 #       with:
 #         aws-role-arn: arn:aws:iam::123456789012:role/dawnfix-read
 #       secrets:
-#         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+#         DAWNFIX_AI_API_KEY: ${{ secrets.DAWNFIX_AI_API_KEY }}   # your AI API key (Claude today)
 #         DAWNFIX_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}   # optional
 #
 # `permissions` in the caller is the ceiling. Every job below asks for less: only the read job
@@ -37,11 +37,11 @@
 # Security split:
 #   read     - holds short-lived cloud credentials (OIDC). Runs only the deterministic
 #              dawnfix-core: no LLM, no write tools, no repo write token.
-#   diagnose - autonomy diagnose. Holds the Anthropic key and an issues-only token: no
+#   diagnose - autonomy diagnose. Holds the AI API key and an issues-only token: no
 #              id-token, no contents write, no pull-requests. The agent can read the code and
 #              write its report under .dawnfix-run/out/; it has no shell. A plain shell step
 #              then files the issues.
-#   fix      - autonomy plan or draft-pr. Holds the Anthropic key and a read-only token: NO
+#   fix      - autonomy plan or draft-pr. Holds the AI API key and a read-only token: NO
 #              id-token permission, so it cannot mint cloud credentials, no contents write,
 #              and no cloud auth step. It sees only the redacted findings.json artifact. The
 #              agent edits files inside a network sandbox and cannot commit or push. Afterwards
@@ -73,9 +73,13 @@ on:
         type: string
         default: ""
       model:
-        description: Model for the agent jobs
+        description: "Claude model for the agent jobs (pass your DAWNFIX_AI_MODEL variable here). Empty: sonnet"
         type: string
-        default: sonnet
+        default: ""
+      ai-provider:
+        description: The AI provider of the agent jobs. claude, the only one today
+        type: string
+        default: claude
       aws-role-arn:
         description: Read-only role from infra/aws/dawnfix-read-role.yaml (AWS sources)
         type: string
@@ -113,9 +117,12 @@ on:
         type: boolean
         default: false
     secrets:
-      ANTHROPIC_API_KEY:
-        description: Your own Anthropic API key (agent jobs only)
-        required: true
+      DAWNFIX_AI_API_KEY:
+        description: Your AI API key (Claude today), for the agent jobs only
+        required: false
+      ANTHROPIC_API_KEY: # deprecated fallback for DAWNFIX_AI_API_KEY, read for one release only
+        description: Deprecated fallback, read only when DAWNFIX_AI_API_KEY is unset. Pass DAWNFIX_AI_API_KEY instead
+        required: false
       DAWNFIX_ENTERPRISE_KEY:
         description: Optional Dawnfix Enterprise key, sent only as the bearer token to the hosted service
         required: false
@@ -142,7 +149,7 @@ permissions: {}
 # CORE_REF is the fallback: a tag or commit SHA of github.com/dawnfix/dawnfix. When it is set,
 # dawnfix-core is installed from git at that ref and the instructions are loaded from it.
 env:
-  DAWNFIX_VERSION: "0.3.1"
+  DAWNFIX_VERSION: "0.4.0"
   CORE_REF: ${{ inputs.core-ref }}
 
 jobs:
@@ -486,6 +493,43 @@ jobs:
             sudo systemctl reload apparmor
           fi
 
+      # The AI settings: the provider (claude, the only one today), the model and which secret
+      # holds the key. Only whether each secret is set reaches this step, never its value.
+      - name: AI settings (provider, model, key)
+        id: ai
+        if: steps.cap.outputs.capped == 'false'
+        env:
+          AI_PROVIDER: ${{ inputs.ai-provider }}
+          AI_MODEL: ${{ inputs.model }}
+          OLD_MODEL: "" # the template reads the deprecated DAWNFIX_MODEL variable here
+          HAS_AI_KEY: ${{ secrets.DAWNFIX_AI_API_KEY != '' }}
+          HAS_OLD_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }} # deprecated fallback for DAWNFIX_AI_API_KEY
+        run: |
+          provider="${AI_PROVIDER:-claude}"
+          if [ "$provider" != "claude" ]; then
+            echo "::error::DAWNFIX_AI_PROVIDER must be claude (the only provider today), not '$provider'"
+            exit 1
+          fi
+          if [ "$HAS_AI_KEY" != "true" ]; then
+            if [ "$HAS_OLD_KEY" = "true" ]; then
+              echo "::warning::the ANTHROPIC_API_KEY secret name is deprecated: pass your AI API key as DAWNFIX_AI_API_KEY. This fallback goes in the next release."
+            else
+              echo "::error::no AI API key: set the DAWNFIX_AI_API_KEY secret (your AI API key, Claude today) and pass it to the workflow"
+              exit 1
+            fi
+          fi
+          model="$AI_MODEL"
+          if [ -z "$model" ] && [ -n "$OLD_MODEL" ]; then
+            echo "::warning::the DAWNFIX_MODEL variable is deprecated: set DAWNFIX_AI_MODEL. This fallback goes in the next release."
+            model="$OLD_MODEL"
+          fi
+          model="${model:-sonnet}"
+          case "$model" in
+            *[!A-Za-z0-9._:@\[\]-]*) echo "::error::the model must be a model name or alias, not '$model'"; exit 1 ;;
+          esac
+          echo "AI: $provider, model $model"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+
       # The agent's instructions: prompts/ci/fix.md from github.com/dawnfix/dawnfix at this
       # release's tag, or at core-ref (the same ref dawnfix-core comes from). Fetched before the
       # agent starts, outside the sandbox, and logged with its SHA-256 so every run says what it
@@ -526,13 +570,13 @@ jobs:
         env:
           DAWNFIX_AUTONOMY: ${{ env.AUTONOMY }}
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.DAWNFIX_AI_API_KEY || secrets.ANTHROPIC_API_KEY }} # the second is the deprecated fallback
           github_token: ${{ github.token }} # skips the Claude GitHub App OIDC exchange (no id-token here)
           # --setting-sources user: ignore allow rules in the repo's own .claude/settings.json,
           # so a repo file cannot widen what the agent may run. The `settings` input below is
           # applied as user settings, which is also why strictAllowlist is honored.
           claude_args: >-
-            --model ${{ inputs.model || 'sonnet' }}
+            --model ${{ steps.ai.outputs.model }}
             --max-turns ${{ needs.read.outputs.max_turns }}
             --allowedTools "Read,Edit,Write,Glob,Grep${{ env.TEST_CMD != '' && format(',Bash({0}:*)', env.TEST_CMD) || '' }}"
             --disallowedTools "WebFetch,WebSearch,Bash(curl:*),Bash(wget:*),Bash(git:*),Bash(gh:*)"
@@ -939,7 +983,8 @@ jobs:
           CAPTURE: ${{ runner.temp }}/dawnfix-publish
           PR_TOKEN: ${{ steps.app-token.outputs.token || secrets.DAWNFIX_PR_TOKEN || github.token }}
           ISSUE_TOKEN: ${{ github.token }}
-          SCAN_ANTHROPIC: ${{ secrets.ANTHROPIC_API_KEY }}
+          SCAN_AI_KEY: ${{ secrets.DAWNFIX_AI_API_KEY }}
+          SCAN_AI_KEY_FALLBACK: ${{ secrets.ANTHROPIC_API_KEY }} # deprecated fallback name
           SCAN_PAT: ${{ secrets.DAWNFIX_PR_TOKEN }}
           SCAN_GH: ${{ github.token }}
           SCAN_ENTERPRISE_KEY: ${{ secrets.DAWNFIX_ENTERPRISE_KEY }}
@@ -993,7 +1038,7 @@ jobs:
           }
 
           publish_issue() { # fingerprint title body
-            if [ "$ISSUES" != "github" ]; then
+            if [ "$ISSUES" != "github" ] && [ "$ISSUES" != "host" ]; then
               echo "report.issues is $ISSUES; GitHub issue for $1 skipped (adapter not in this version)"
               return 0
             fi
@@ -1038,7 +1083,7 @@ jobs:
             leak=false
             while IFS= read -r f; do
               content=$(g cat-file -p "$branch:$f" 2>/dev/null || true)
-              for v in "$SCAN_ANTHROPIC" "$SCAN_PAT" "$SCAN_GH" "$SCAN_ENTERPRISE_KEY"; do
+              for v in "$SCAN_AI_KEY" "$SCAN_AI_KEY_FALLBACK" "$SCAN_PAT" "$SCAN_GH" "$SCAN_ENTERPRISE_KEY"; do
                 if [ -n "$v" ] && printf '%s' "$content" | grep -qF -- "$v"; then leak=true; fi
               done
             done < <(g diff --name-only "$base_sha" "$branch")
@@ -1101,6 +1146,42 @@ jobs:
           name: dawnfix-findings
           path: ${{ env.RUN_DIR }}
 
+      # The AI settings: the provider (claude, the only one today), the model and which secret
+      # holds the key. Only whether each secret is set reaches this step, never its value.
+      - name: AI settings (provider, model, key)
+        id: ai
+        env:
+          AI_PROVIDER: ${{ inputs.ai-provider }}
+          AI_MODEL: ${{ inputs.model }}
+          OLD_MODEL: "" # the template reads the deprecated DAWNFIX_MODEL variable here
+          HAS_AI_KEY: ${{ secrets.DAWNFIX_AI_API_KEY != '' }}
+          HAS_OLD_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }} # deprecated fallback for DAWNFIX_AI_API_KEY
+        run: |
+          provider="${AI_PROVIDER:-claude}"
+          if [ "$provider" != "claude" ]; then
+            echo "::error::DAWNFIX_AI_PROVIDER must be claude (the only provider today), not '$provider'"
+            exit 1
+          fi
+          if [ "$HAS_AI_KEY" != "true" ]; then
+            if [ "$HAS_OLD_KEY" = "true" ]; then
+              echo "::warning::the ANTHROPIC_API_KEY secret name is deprecated: pass your AI API key as DAWNFIX_AI_API_KEY. This fallback goes in the next release."
+            else
+              echo "::error::no AI API key: set the DAWNFIX_AI_API_KEY secret (your AI API key, Claude today) and pass it to the workflow"
+              exit 1
+            fi
+          fi
+          model="$AI_MODEL"
+          if [ -z "$model" ] && [ -n "$OLD_MODEL" ]; then
+            echo "::warning::the DAWNFIX_MODEL variable is deprecated: set DAWNFIX_AI_MODEL. This fallback goes in the next release."
+            model="$OLD_MODEL"
+          fi
+          model="${model:-sonnet}"
+          case "$model" in
+            *[!A-Za-z0-9._:@\[\]-]*) echo "::error::the model must be a model name or alias, not '$model'"; exit 1 ;;
+          esac
+          echo "AI: $provider, model $model"
+          echo "model=$model" >> "$GITHUB_OUTPUT"
+
       # The agent's instructions: prompts/ci/diagnose.md at the release ref (see the fix job).
       - name: Load the agent's instructions (prompts/ci/diagnose.md)
         id: instructions
@@ -1132,10 +1213,10 @@ jobs:
         id: claude
         uses: anthropics/claude-code-action@d70510b174a1244958df0b03166a54912811f3e6 # v1.0.264
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          anthropic_api_key: ${{ secrets.DAWNFIX_AI_API_KEY || secrets.ANTHROPIC_API_KEY }} # the second is the deprecated fallback
           github_token: ${{ github.token }} # skips the Claude GitHub App OIDC exchange (no id-token here)
           claude_args: >-
-            --model ${{ inputs.model || 'sonnet' }}
+            --model ${{ steps.ai.outputs.model }}
             --max-turns ${{ needs.read.outputs.max_turns }}
             --allowedTools "Read,Glob,Grep,Write"
             --disallowedTools "Bash,WebFetch,WebSearch,NotebookEdit"
@@ -1197,7 +1278,7 @@ jobs:
             echo "::error::result.json or findings.json is a symlink; nothing filed"
             exit 1
           fi
-          if [ "$ISSUES" != "github" ]; then
+          if [ "$ISSUES" != "github" ] && [ "$ISSUES" != "host" ]; then
             echo "report.issues is $ISSUES; the diagnose job files GitHub issues only, nothing filed"
             exit 0
           fi

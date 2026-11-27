@@ -47,7 +47,8 @@ test:
 # true: no log text anywhere (PRs, issues, digest); only fingerprints, counts, route templates.
 phi_mode: false
 
-# Where the diagnose job files its issues: github, or none. (linear and jira are accepted by
+# Where the diagnose job files its issues: host (the repo's own issues, GitHub or GitLab;
+# github means the same), or none. (linear and jira are accepted by
 # the config but nothing files to them yet.) The hosted digest email is Dawnfix Enterprise:
 # its recipients are set on the service (hosted/service.sh workspace), not here.
 report:

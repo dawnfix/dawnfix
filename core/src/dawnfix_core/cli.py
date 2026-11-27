@@ -84,10 +84,17 @@ def parser() -> argparse.ArgumentParser:
     c = sub.add_parser("config", help="print the resolved config (defaults filled in)")
     c.add_argument("--config", default=".dawnfix.yml")
     c.add_argument("--json", action="store_true", help="as JSON, for the workflow")
+
+    sub.add_parser("run", help="the CI-agnostic engine: read | agent | publish | report (dawnfix run --help)",
+                   add_help=False)
     return p
 
 
 def main(argv=None, sources=None) -> int:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv[:1] == ["run"]:
+        from .run.cli import main as run_main
+        return run_main(argv[1:], sources=sources)
     args = parser().parse_args(argv)
     if args.command == "tick" and not (1 <= args.window_minutes <= 7 * 24 * 60):
         print("dawnfix: --window-minutes must be between 1 and 10080", file=sys.stderr)
